@@ -1,4 +1,3 @@
-
 const express = require("express");
 
 const router = express.Router();
@@ -9,6 +8,7 @@ const {
   addResult,
   getResults,
   getResultById,
+  updateResult,
   deleteResult,
 } = require("../controllers/resultController");
 
@@ -46,6 +46,17 @@ router.get(
 );
 
 /* =========================================================
+   UPDATE RESULT
+   Admin only
+========================================================= */
+
+router.put(
+  "/:id",
+  authMiddleware,
+  updateResult
+);
+
+/* =========================================================
    DELETE RESULT
    Admin only
 ========================================================= */
@@ -57,4 +68,3 @@ router.delete(
 );
 
 module.exports = router;
-

@@ -1,4 +1,3 @@
-
 const { ObjectId } = require("mongodb");
 const { getDB } = require("../config/db");
 
@@ -38,6 +37,79 @@ const calculateGPA = (grade) => {
 };
 
 /* =========================================================
+   GET STUDENT PHOTO
+   নতুন + পুরনো result দুই ক্ষেত্রেই কাজ করবে
+========================================================= */
+
+const getStudentPhoto = async (
+  studentsCollection,
+  result
+) => {
+  /* -------------------------------------------------------
+     প্রথমে result document-এর saved photo দেখবে
+  ------------------------------------------------------- */
+
+  if (
+    typeof result.studentPhoto === "string" &&
+    result.studentPhoto.trim() !== ""
+  ) {
+    return result.studentPhoto;
+  }
+
+  /* -------------------------------------------------------
+     পুরনো result হলে studentId দিয়ে students collection
+     থেকে photo নিয়ে আসবে
+  ------------------------------------------------------- */
+
+  if (!result.studentId) {
+    return "";
+  }
+
+  try {
+    let studentObjectId;
+
+    if (
+      result.studentId instanceof ObjectId
+    ) {
+      studentObjectId =
+        result.studentId;
+    } else if (
+      ObjectId.isValid(
+        String(result.studentId)
+      )
+    ) {
+      studentObjectId =
+        new ObjectId(
+          String(result.studentId)
+        );
+    } else {
+      return "";
+    }
+
+    const student =
+      await studentsCollection.findOne({
+        _id: studentObjectId,
+      });
+
+    if (!student) {
+      return "";
+    }
+
+    return (
+      student.image ||
+      ""
+    );
+  } catch (error) {
+    console.error(
+      "Get Student Photo Error:",
+      error.message
+    );
+
+    return "";
+  }
+};
+
+/* =========================================================
    ADD RESULT
 ========================================================= */
 
@@ -45,9 +117,14 @@ const addResult = async (req, res) => {
   try {
     const db = getDB();
 
-    const studentsCollection = db.collection("students");
-    const subjectsCollection = db.collection("subjects");
-    const resultsCollection = db.collection("results");
+    const studentsCollection =
+      db.collection("students");
+
+    const subjectsCollection =
+      db.collection("subjects");
+
+    const resultsCollection =
+      db.collection("results");
 
     const {
       studentId,
@@ -86,9 +163,14 @@ const addResult = async (req, res) => {
       });
     }
 
-    const cleanMonth = String(month).trim();
-    const cleanExamName = String(examName).trim();
-    const cleanYear = String(year).trim();
+    const cleanMonth =
+      String(month).trim();
+
+    const cleanExamName =
+      String(examName).trim();
+
+    const cleanYear =
+      String(year).trim();
 
     if (!cleanMonth) {
       return res.status(400).send({
@@ -115,9 +197,10 @@ const addResult = async (req, res) => {
        FIND STUDENT
     ===================================================== */
 
-    const student = await studentsCollection.findOne({
-      _id: new ObjectId(studentId),
-    });
+    const student =
+      await studentsCollection.findOne({
+        _id: new ObjectId(studentId),
+      });
 
     if (!student) {
       return res.status(404).send({
@@ -130,19 +213,22 @@ const addResult = async (req, res) => {
        GET CLASS SUBJECTS
     ===================================================== */
 
-    const subjects = await subjectsCollection
-      .find({
-        className: student.className,
-      })
-      .sort({
-        subjectName: 1,
-      })
-      .toArray();
+    const subjects =
+      await subjectsCollection
+        .find({
+          className:
+            student.className,
+        })
+        .sort({
+          subjectName: 1,
+        })
+        .toArray();
 
     if (!subjects.length) {
       return res.status(400).send({
         success: false,
-        message: "No subjects found for this class",
+        message:
+          "No subjects found for this class",
       });
     }
 
@@ -150,17 +236,25 @@ const addResult = async (req, res) => {
        A+ REQUIRED SUBJECTS
     ===================================================== */
 
-    const totalSubjects = subjects.length;
+    const totalSubjects =
+      subjects.length;
 
-    let requiredAPlus = Number(aPlusRequired);
+    let requiredAPlus =
+      Number(aPlusRequired);
 
-    if (!Number.isInteger(requiredAPlus)) {
-      requiredAPlus = totalSubjects;
+    if (
+      !Number.isInteger(
+        requiredAPlus
+      )
+    ) {
+      requiredAPlus =
+        totalSubjects;
     }
 
     if (
       requiredAPlus < 1 ||
-      requiredAPlus > totalSubjects
+      requiredAPlus >
+        totalSubjects
     ) {
       return res.status(400).send({
         success: false,
@@ -177,20 +271,27 @@ const addResult = async (req, res) => {
       session !== undefined &&
       session !== null
         ? String(session).trim()
-        : String(student.session || "").trim();
+        : String(
+            student.session || ""
+          ).trim();
 
     /* =====================================================
        DUPLICATE RESULT CHECK
-
-       Student + Month + Exam + Year
     ===================================================== */
 
     const existingResult =
       await resultsCollection.findOne({
-        studentId: student._id,
-        month: cleanMonth,
-        examName: cleanExamName,
-        year: cleanYear,
+        studentId:
+          student._id,
+
+        month:
+          cleanMonth,
+
+        examName:
+          cleanExamName,
+
+        year:
+          cleanYear,
       });
 
     if (existingResult) {
@@ -217,12 +318,15 @@ const addResult = async (req, res) => {
     ===================================================== */
 
     for (const subject of subjects) {
-      const subjectId = subject._id.toString();
+      const subjectId =
+        subject._id.toString();
 
-      const subjectInput = marks[subjectId];
+      const subjectInput =
+        marks[subjectId];
 
       if (
-        subjectInput === undefined ||
+        subjectInput ===
+          undefined ||
         subjectInput === null
       ) {
         return res.status(400).send({
@@ -241,8 +345,11 @@ const addResult = async (req, res) => {
       let passMarks;
 
       if (
-        typeof subjectInput === "object" &&
-        !Array.isArray(subjectInput)
+        typeof subjectInput ===
+          "object" &&
+        !Array.isArray(
+          subjectInput
+        )
       ) {
         obtained = Number(
           subjectInput.obtainedMarks
@@ -253,14 +360,28 @@ const addResult = async (req, res) => {
         );
 
         passMarks =
-          subjectInput.passMarks !== undefined &&
-          subjectInput.passMarks !== ""
-            ? Number(subjectInput.passMarks)
-            : Number(subject.passMarks);
+          subjectInput.passMarks !==
+            undefined &&
+          subjectInput.passMarks !==
+            ""
+            ? Number(
+                subjectInput.passMarks
+              )
+            : Number(
+                subject.passMarks
+              );
       } else {
-        obtained = Number(subjectInput);
-        fullMarks = Number(subject.fullMarks);
-        passMarks = Number(subject.passMarks);
+        obtained = Number(
+          subjectInput
+        );
+
+        fullMarks = Number(
+          subject.fullMarks
+        );
+
+        passMarks = Number(
+          subject.passMarks
+        );
       }
 
       /* ---------------------------------------------------
@@ -268,14 +389,20 @@ const addResult = async (req, res) => {
       --------------------------------------------------- */
 
       if (
-        !Number.isFinite(fullMarks) ||
+        !Number.isFinite(
+          fullMarks
+        ) ||
         fullMarks <= 0
       ) {
-        fullMarks = Number(subject.fullMarks);
+        fullMarks = Number(
+          subject.fullMarks
+        );
       }
 
       if (
-        !Number.isFinite(fullMarks) ||
+        !Number.isFinite(
+          fullMarks
+        ) ||
         fullMarks <= 0
       ) {
         return res.status(400).send({
@@ -290,19 +417,25 @@ const addResult = async (req, res) => {
       --------------------------------------------------- */
 
       if (
-        !Number.isFinite(passMarks) ||
+        !Number.isFinite(
+          passMarks
+        ) ||
         passMarks < 0
       ) {
-        passMarks = Math.ceil(
-          fullMarks * 0.33
-        );
+        passMarks =
+          Math.ceil(
+            fullMarks * 0.33
+          );
       }
 
       /* ---------------------------------------------------
          VALIDATE PASS MARKS
       --------------------------------------------------- */
 
-      if (passMarks > fullMarks) {
+      if (
+        passMarks >
+        fullMarks
+      ) {
         return res.status(400).send({
           success: false,
           message:
@@ -315,7 +448,9 @@ const addResult = async (req, res) => {
       --------------------------------------------------- */
 
       if (
-        !Number.isFinite(obtained) ||
+        !Number.isFinite(
+          obtained
+        ) ||
         obtained < 0
       ) {
         return res.status(400).send({
@@ -325,7 +460,10 @@ const addResult = async (req, res) => {
         });
       }
 
-      if (obtained > fullMarks) {
+      if (
+        obtained >
+        fullMarks
+      ) {
         return res.status(400).send({
           success: false,
           message:
@@ -338,14 +476,18 @@ const addResult = async (req, res) => {
       =================================================== */
 
       const percentage =
-        (obtained / fullMarks) * 100;
+        (obtained /
+          fullMarks) *
+        100;
 
       /* ===================================================
          GRADE
       =================================================== */
 
       const grade =
-        calculateGrade(percentage);
+        calculateGrade(
+          percentage
+        );
 
       const gradePoint =
         calculateGPA(grade);
@@ -359,7 +501,10 @@ const addResult = async (req, res) => {
           ? "Pass"
           : "Fail";
 
-      if (subjectStatus === "Fail") {
+      if (
+        subjectStatus ===
+        "Fail"
+      ) {
         hasFailed = true;
       }
 
@@ -367,7 +512,9 @@ const addResult = async (req, res) => {
          A+ COUNT
       =================================================== */
 
-      if (grade === "A+") {
+      if (
+        grade === "A+"
+      ) {
         aPlusCount++;
       }
 
@@ -375,35 +522,43 @@ const addResult = async (req, res) => {
          TOTAL
       =================================================== */
 
-      totalMarks += obtained;
-      totalFullMarks += fullMarks;
+      totalMarks +=
+        obtained;
+
+      totalFullMarks +=
+        fullMarks;
 
       /* ===================================================
          SUBJECT RESULT
-
-         IMPORTANT:
-         এখানে শুধু subject data থাকবে।
       =================================================== */
 
       resultSubjects.push({
-        subjectId: subject._id,
+        subjectId:
+          subject._id,
+
         subjectName:
           subject.subjectName ||
           subject.name ||
           "Subject",
 
         fullMarks,
-        passMarks,
-        obtainedMarks: obtained,
 
-        percentage: Number(
-          percentage.toFixed(2)
-        ),
+        passMarks,
+
+        obtainedMarks:
+          obtained,
+
+        percentage:
+          Number(
+            percentage.toFixed(2)
+          ),
 
         grade,
+
         gradePoint,
 
-        status: subjectStatus,
+        status:
+          subjectStatus,
       });
     }
 
@@ -413,7 +568,9 @@ const addResult = async (req, res) => {
 
     const overallPercentage =
       totalFullMarks > 0
-        ? (totalMarks / totalFullMarks) * 100
+        ? (totalMarks /
+            totalFullMarks) *
+          100
         : 0;
 
     /* =====================================================
@@ -422,19 +579,18 @@ const addResult = async (req, res) => {
 
     let overallGrade;
 
-    /*
-      যদি কোনো subject fail করে,
-      overall A+ হবে না।
-    */
-
     if (
       !hasFailed &&
-      aPlusCount >= requiredAPlus
+      aPlusCount >=
+        requiredAPlus
     ) {
-      overallGrade = "A+";
+      overallGrade =
+        "A+";
     } else {
       overallGrade =
-        calculateGrade(overallPercentage);
+        calculateGrade(
+          overallPercentage
+        );
     }
 
     /* =====================================================
@@ -443,26 +599,29 @@ const addResult = async (req, res) => {
 
     const totalGradePoints =
       resultSubjects.reduce(
-        (sum, subject) =>
-          sum + Number(subject.gradePoint || 0),
+        (
+          sum,
+          subject
+        ) =>
+          sum +
+          Number(
+            subject.gradePoint ||
+              0
+          ),
         0
       );
 
     let gpa =
-      resultSubjects.length > 0
+      resultSubjects.length >
+      0
         ? totalGradePoints /
           resultSubjects.length
         : 0;
 
-    /*
-      A+ requirement পূরণ হলে
-      এবং কোনো subject fail না হলে
-      GPA = 5.00
-    */
-
     if (
       !hasFailed &&
-      aPlusCount >= requiredAPlus
+      aPlusCount >=
+        requiredAPlus
     ) {
       gpa = 5;
     }
@@ -480,10 +639,12 @@ const addResult = async (req, res) => {
        RESULT DOCUMENT
     ===================================================== */
 
-    const now = new Date();
+    const now =
+      new Date();
 
     const resultData = {
-      studentId: student._id,
+      studentId:
+        student._id,
 
       studentName:
         student.name ||
@@ -493,18 +654,22 @@ const addResult = async (req, res) => {
       studentIdCard:
         student.idCard || "",
 
+      /* =================================================
+         STUDENT PHOTO
+      ================================================= */
+
+      studentPhoto:
+        student.image || "",
+
       roll:
         student.roll || "",
 
       className:
-        student.className || "",
+        student.className ||
+        "",
 
       session:
         cleanSession,
-
-      /* ================================================
-         PUBLIC SEARCH FIELDS
-      ================================================ */
 
       month:
         cleanMonth,
@@ -515,16 +680,8 @@ const addResult = async (req, res) => {
       year:
         cleanYear,
 
-      /* ================================================
-         SUBJECT RESULTS
-      ================================================ */
-
       subjects:
         resultSubjects,
-
-      /* ================================================
-         A+ INFORMATION
-      ================================================ */
 
       totalSubjects,
 
@@ -533,22 +690,16 @@ const addResult = async (req, res) => {
 
       aPlusCount,
 
-      /* ================================================
-         OVERALL MARKS
-      ================================================ */
-
       totalMarks,
 
       totalFullMarks,
 
       percentage:
         Number(
-          overallPercentage.toFixed(2)
+          overallPercentage.toFixed(
+            2
+          )
         ),
-
-      /* ================================================
-         FINAL RESULT
-      ================================================ */
 
       grade:
         overallGrade,
@@ -560,8 +711,11 @@ const addResult = async (req, res) => {
 
       status,
 
-      createdAt: now,
-      updatedAt: now,
+      createdAt:
+        now,
+
+      updatedAt:
+        now,
     };
 
     /* =====================================================
@@ -603,14 +757,21 @@ const addResult = async (req, res) => {
 
 /* =========================================================
    GET RESULTS
+   পুরনো result-এর জন্যও student photo attach করবে
 ========================================================= */
 
-const getResults = async (req, res) => {
+const getResults = async (
+  req,
+  res
+) => {
   try {
     const db = getDB();
 
     const resultsCollection =
       db.collection("results");
+
+    const studentsCollection =
+      db.collection("students");
 
     const results =
       await resultsCollection
@@ -620,9 +781,32 @@ const getResults = async (req, res) => {
         })
         .toArray();
 
+    /* =====================================================
+       ATTACH STUDENT PHOTO
+    ===================================================== */
+
+    const resultsWithPhoto =
+      await Promise.all(
+        results.map(
+          async (result) => {
+            const studentPhoto =
+              await getStudentPhoto(
+                studentsCollection,
+                result
+              );
+
+            return {
+              ...result,
+              studentPhoto,
+            };
+          }
+        )
+      );
+
     return res.send({
       success: true,
-      data: results,
+      data:
+        resultsWithPhoto,
     });
   } catch (error) {
     console.error(
@@ -642,16 +826,25 @@ const getResults = async (req, res) => {
    GET SINGLE RESULT
 ========================================================= */
 
-const getResultById = async (req, res) => {
+const getResultById = async (
+  req,
+  res
+) => {
   try {
     const db = getDB();
 
     const resultsCollection =
       db.collection("results");
 
-    const { id } = req.params;
+    const studentsCollection =
+      db.collection("students");
 
-    if (!ObjectId.isValid(id)) {
+    const { id } =
+      req.params;
+
+    if (
+      !ObjectId.isValid(id)
+    ) {
       return res.status(400).send({
         success: false,
         message:
@@ -673,9 +866,25 @@ const getResultById = async (req, res) => {
       });
     }
 
+    /* =====================================================
+       STUDENT PHOTO
+    ===================================================== */
+
+    const studentPhoto =
+      await getStudentPhoto(
+        studentsCollection,
+        result
+      );
+
+    const resultWithPhoto = {
+      ...result,
+      studentPhoto,
+    };
+
     return res.send({
       success: true,
-      data: result,
+      data:
+        resultWithPhoto,
     });
   } catch (error) {
     console.error(
@@ -687,6 +896,737 @@ const getResultById = async (req, res) => {
       success: false,
       message:
         "Failed to load result",
+    });
+  }
+};
+
+/* =========================================================
+   UPDATE RESULT
+========================================================= */
+
+const updateResult = async (
+  req,
+  res
+) => {
+  try {
+    const db = getDB();
+
+    const resultsCollection =
+      db.collection("results");
+
+    const studentsCollection =
+      db.collection("students");
+
+    const { id } =
+      req.params;
+
+    /* =====================================================
+       VALIDATE ID
+    ===================================================== */
+
+    if (
+      !ObjectId.isValid(id)
+    ) {
+      return res.status(400).send({
+        success: false,
+        message:
+          "Invalid result ID",
+      });
+    }
+
+    /* =====================================================
+       FIND EXISTING RESULT
+    ===================================================== */
+
+    const existingResult =
+      await resultsCollection.findOne({
+        _id:
+          new ObjectId(id),
+      });
+
+    if (!existingResult) {
+      return res.status(404).send({
+        success: false,
+        message:
+          "Result not found",
+      });
+    }
+
+    /* =====================================================
+       REQUEST DATA
+    ===================================================== */
+
+    const {
+      month,
+      examName,
+      year,
+      session,
+      subjects,
+      aPlusRequired,
+    } = req.body;
+
+    /* =====================================================
+       BASIC VALIDATION
+    ===================================================== */
+
+    const cleanMonth =
+      String(
+        month ??
+          existingResult.month ??
+          ""
+      ).trim();
+
+    const cleanExamName =
+      String(
+        examName ??
+          existingResult.examName ??
+          ""
+      ).trim();
+
+    const cleanYear =
+      String(
+        year ??
+          existingResult.year ??
+          ""
+      ).trim();
+
+    if (!cleanMonth) {
+      return res.status(400).send({
+        success: false,
+        message:
+          "Month is required",
+      });
+    }
+
+    if (!cleanExamName) {
+      return res.status(400).send({
+        success: false,
+        message:
+          "Exam name is required",
+      });
+    }
+
+    if (!cleanYear) {
+      return res.status(400).send({
+        success: false,
+        message:
+          "Year is required",
+      });
+    }
+
+    /* =====================================================
+       SUBJECT VALIDATION
+    ===================================================== */
+
+    if (
+      !Array.isArray(subjects) ||
+      subjects.length === 0
+    ) {
+      return res.status(400).send({
+        success: false,
+        message:
+          "Subject marks are required",
+      });
+    }
+
+    /* =====================================================
+       A+ REQUIRED
+    ===================================================== */
+
+    const totalSubjects =
+      subjects.length;
+
+    let requiredAPlus;
+
+    if (
+      aPlusRequired !==
+        undefined &&
+      aPlusRequired !==
+        null &&
+      aPlusRequired !== ""
+    ) {
+      requiredAPlus =
+        Number(
+          aPlusRequired
+        );
+    } else {
+      requiredAPlus =
+        Number(
+          existingResult.aPlusRequired
+        );
+    }
+
+    if (
+      !Number.isInteger(
+        requiredAPlus
+      )
+    ) {
+      requiredAPlus =
+        totalSubjects;
+    }
+
+    if (
+      requiredAPlus < 1 ||
+      requiredAPlus >
+        totalSubjects
+    ) {
+      return res.status(400).send({
+        success: false,
+        message:
+          `A+ Required Subjects must be between 1 and ${totalSubjects}`,
+      });
+    }
+
+    /* =====================================================
+       CALCULATION VARIABLES
+    ===================================================== */
+
+    let totalMarks = 0;
+    let totalFullMarks = 0;
+    let hasFailed = false;
+    let aPlusCount = 0;
+
+    const updatedSubjects = [];
+
+    /* =====================================================
+       SUBJECT LOOP
+    ===================================================== */
+
+    for (
+      let index = 0;
+      index < subjects.length;
+      index++
+    ) {
+      const inputSubject =
+        subjects[index];
+
+      /* ---------------------------------------------------
+         SUBJECT ID
+      --------------------------------------------------- */
+
+      let subjectId =
+        inputSubject?.subjectId;
+
+      if (
+        subjectId &&
+        typeof subjectId ===
+          "object" &&
+        subjectId.$oid
+      ) {
+        subjectId =
+          subjectId.$oid;
+      }
+
+      /* ---------------------------------------------------
+         FIND ORIGINAL SUBJECT
+      --------------------------------------------------- */
+
+      let originalSubject =
+        existingResult.subjects?.find(
+          (item) => {
+            const existingId =
+              item?.subjectId
+                ?.toString();
+
+            return (
+              existingId &&
+              subjectId &&
+              existingId ===
+                String(subjectId)
+            );
+          }
+        );
+
+      if (
+        !originalSubject &&
+        Array.isArray(
+          existingResult.subjects
+        )
+      ) {
+        originalSubject =
+          existingResult.subjects[
+            index
+          ];
+      }
+
+      /* ---------------------------------------------------
+         SUBJECT NAME
+      --------------------------------------------------- */
+
+      const subjectName =
+        inputSubject?.subjectName ||
+        inputSubject?.name ||
+        originalSubject?.subjectName ||
+        `Subject ${index + 1}`;
+
+      /* ---------------------------------------------------
+         FULL MARKS
+      --------------------------------------------------- */
+
+      let fullMarks =
+        Number(
+          inputSubject?.fullMarks
+        );
+
+      if (
+        !Number.isFinite(
+          fullMarks
+        ) ||
+        fullMarks <= 0
+      ) {
+        fullMarks =
+          Number(
+            originalSubject?.fullMarks
+          );
+      }
+
+      if (
+        !Number.isFinite(
+          fullMarks
+        ) ||
+        fullMarks <= 0
+      ) {
+        return res.status(400).send({
+          success: false,
+          message:
+            `${subjectName} has invalid full marks`,
+        });
+      }
+
+      /* ---------------------------------------------------
+         PASS MARKS
+      --------------------------------------------------- */
+
+      let passMarks =
+        Number(
+          inputSubject?.passMarks
+        );
+
+      if (
+        !Number.isFinite(
+          passMarks
+        ) ||
+        passMarks < 0
+      ) {
+        passMarks =
+          Number(
+            originalSubject?.passMarks
+          );
+      }
+
+      if (
+        !Number.isFinite(
+          passMarks
+        ) ||
+        passMarks < 0
+      ) {
+        passMarks =
+          Math.ceil(
+            fullMarks * 0.33
+          );
+      }
+
+      if (
+        passMarks >
+        fullMarks
+      ) {
+        return res.status(400).send({
+          success: false,
+          message:
+            `${subjectName}: Pass marks cannot exceed ${fullMarks}`,
+        });
+      }
+
+      /* ---------------------------------------------------
+         OBTAINED MARKS
+      --------------------------------------------------- */
+
+      let obtainedMarks =
+        Number(
+          inputSubject?.obtainedMarks
+        );
+
+      if (
+        !Number.isFinite(
+          obtainedMarks
+        )
+      ) {
+        obtainedMarks =
+          Number(
+            originalSubject?.obtainedMarks
+          );
+      }
+
+      if (
+        !Number.isFinite(
+          obtainedMarks
+        ) ||
+        obtainedMarks < 0
+      ) {
+        return res.status(400).send({
+          success: false,
+          message:
+            `Invalid marks for ${subjectName}`,
+        });
+      }
+
+      if (
+        obtainedMarks >
+        fullMarks
+      ) {
+        return res.status(400).send({
+          success: false,
+          message:
+            `${subjectName} marks cannot exceed ${fullMarks}`,
+        });
+      }
+
+      /* ===================================================
+         SUBJECT PERCENTAGE
+      =================================================== */
+
+      const percentage =
+        (obtainedMarks /
+          fullMarks) *
+        100;
+
+      /* ===================================================
+         SUBJECT GRADE
+      =================================================== */
+
+      const grade =
+        calculateGrade(
+          percentage
+        );
+
+      /* ===================================================
+         SUBJECT GPA
+      =================================================== */
+
+      const gradePoint =
+        calculateGPA(grade);
+
+      /* ===================================================
+         SUBJECT STATUS
+      =================================================== */
+
+      const subjectStatus =
+        obtainedMarks >=
+        passMarks
+          ? "Pass"
+          : "Fail";
+
+      if (
+        subjectStatus ===
+        "Fail"
+      ) {
+        hasFailed = true;
+      }
+
+      /* ===================================================
+         A+ COUNT
+      =================================================== */
+
+      if (
+        grade === "A+"
+      ) {
+        aPlusCount++;
+      }
+
+      /* ===================================================
+         TOTAL
+      =================================================== */
+
+      totalMarks +=
+        obtainedMarks;
+
+      totalFullMarks +=
+        fullMarks;
+
+      /* ===================================================
+         UPDATED SUBJECT
+      =================================================== */
+
+      updatedSubjects.push({
+        subjectId:
+          originalSubject?.subjectId ||
+          (
+            ObjectId.isValid(
+              subjectId
+            )
+              ? new ObjectId(
+                  subjectId
+                )
+              : subjectId
+          ),
+
+        subjectName,
+
+        fullMarks,
+
+        passMarks,
+
+        obtainedMarks,
+
+        percentage:
+          Number(
+            percentage.toFixed(2)
+          ),
+
+        grade,
+
+        gradePoint,
+
+        status:
+          subjectStatus,
+      });
+    }
+
+    /* =====================================================
+       OVERALL PERCENTAGE
+    ===================================================== */
+
+    const overallPercentage =
+      totalFullMarks > 0
+        ? (totalMarks /
+            totalFullMarks) *
+          100
+        : 0;
+
+    /* =====================================================
+       OVERALL GRADE
+    ===================================================== */
+
+    let overallGrade;
+
+    if (
+      !hasFailed &&
+      aPlusCount >=
+        requiredAPlus
+    ) {
+      overallGrade =
+        "A+";
+    } else {
+      overallGrade =
+        calculateGrade(
+          overallPercentage
+        );
+    }
+
+    /* =====================================================
+       OVERALL GPA
+    ===================================================== */
+
+    const totalGradePoints =
+      updatedSubjects.reduce(
+        (
+          sum,
+          subject
+        ) =>
+          sum +
+          Number(
+            subject.gradePoint ||
+              0
+          ),
+        0
+      );
+
+    let gpa =
+      updatedSubjects.length >
+      0
+        ? totalGradePoints /
+          updatedSubjects.length
+        : 0;
+
+    if (
+      !hasFailed &&
+      aPlusCount >=
+        requiredAPlus
+    ) {
+      gpa = 5;
+    }
+
+    /* =====================================================
+       FINAL STATUS
+    ===================================================== */
+
+    const status =
+      hasFailed
+        ? "Fail"
+        : "Pass";
+
+    /* =====================================================
+       SESSION
+    ===================================================== */
+
+    const cleanSession =
+      session !== undefined &&
+      session !== null
+        ? String(session).trim()
+        : String(
+            existingResult.session ||
+              ""
+          ).trim();
+
+    /* =====================================================
+       DUPLICATE CHECK
+    ===================================================== */
+
+    const duplicateResult =
+      await resultsCollection.findOne({
+        _id: {
+          $ne:
+            new ObjectId(id),
+        },
+
+        studentId:
+          existingResult.studentId,
+
+        month:
+          cleanMonth,
+
+        examName:
+          cleanExamName,
+
+        year:
+          cleanYear,
+      });
+
+    if (duplicateResult) {
+      return res.status(409).send({
+        success: false,
+        message:
+          "Another result already exists for this student, month, exam and year",
+      });
+    }
+
+    /* =====================================================
+       STUDENT PHOTO
+       Update করার সময়ও photo refresh হবে
+    ===================================================== */
+
+    const studentPhoto =
+      await getStudentPhoto(
+        studentsCollection,
+        existingResult
+      );
+
+    /* =====================================================
+       UPDATE DATA
+    ===================================================== */
+
+    const updateData = {
+      month:
+        cleanMonth,
+
+      examName:
+        cleanExamName,
+
+      year:
+        cleanYear,
+
+      session:
+        cleanSession,
+
+      subjects:
+        updatedSubjects,
+
+      totalSubjects:
+        updatedSubjects.length,
+
+      aPlusRequired:
+        requiredAPlus,
+
+      aPlusCount,
+
+      totalMarks,
+
+      totalFullMarks,
+
+      percentage:
+        Number(
+          overallPercentage.toFixed(
+            2
+          )
+        ),
+
+      grade:
+        overallGrade,
+
+      gpa:
+        Number(
+          gpa.toFixed(2)
+        ),
+
+      status,
+
+      studentPhoto,
+
+      updatedAt:
+        new Date(),
+    };
+
+    /* =====================================================
+       UPDATE DATABASE
+    ===================================================== */
+
+    const updateResult =
+      await resultsCollection.updateOne(
+        {
+          _id:
+            new ObjectId(id),
+        },
+        {
+          $set:
+            updateData,
+        }
+      );
+
+    if (
+      !updateResult.modifiedCount &&
+      !updateResult.matchedCount
+    ) {
+      return res.status(404).send({
+        success: false,
+        message:
+          "Result not found",
+      });
+    }
+
+    /* =====================================================
+       GET UPDATED RESULT
+    ===================================================== */
+
+    const updatedResult =
+      await resultsCollection.findOne({
+        _id:
+          new ObjectId(id),
+      });
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
+
+    return res.send({
+      success: true,
+
+      message:
+        "Result updated successfully",
+
+      result:
+        updatedResult,
+    });
+  } catch (error) {
+    console.error(
+      "Update Result Error:",
+      error
+    );
+
+    return res.status(500).send({
+      success: false,
+      message:
+        error.message ||
+        "Failed to update result",
     });
   }
 };
@@ -705,9 +1645,12 @@ const deleteResult = async (
     const resultsCollection =
       db.collection("results");
 
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
-    if (!ObjectId.isValid(id)) {
+    if (
+      !ObjectId.isValid(id)
+    ) {
       return res.status(400).send({
         success: false,
         message:
@@ -721,7 +1664,9 @@ const deleteResult = async (
           new ObjectId(id),
       });
 
-    if (!result.deletedCount) {
+    if (
+      !result.deletedCount
+    ) {
       return res.status(404).send({
         success: false,
         message:
@@ -756,6 +1701,6 @@ module.exports = {
   addResult,
   getResults,
   getResultById,
+  updateResult,
   deleteResult,
 };
-

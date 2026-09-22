@@ -7,18 +7,13 @@ const getCollection = () => {
 
 /* =========================================================
    GENERATE INVOICE NUMBER
+   Format: #123
 ========================================================= */
 
 const generateInvoiceNumber = () => {
-  const now = new Date();
+  const number = Math.floor(100 + Math.random() * 900);
 
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
-  const random = Math.floor(1000 + Math.random() * 9000);
-
-  return `INV-${year}${month}${day}-${random}`;
+  return `#${number}`;
 };
 
 /* =========================================================
@@ -177,7 +172,6 @@ const addFee = async (req, res) => {
 
     /* -------------------------------------------------------
        DUPLICATE CHECK
-
        Same student + same month + same year
     ------------------------------------------------------- */
 
@@ -217,6 +211,7 @@ const addFee = async (req, res) => {
 
     /* -------------------------------------------------------
        GENERATE INVOICE
+       Example: #472
     ------------------------------------------------------- */
 
     const invoiceNumber =
@@ -248,6 +243,7 @@ const addFee = async (req, res) => {
 
     const feeData = {
       studentId,
+
       studentName,
 
       studentIdCard:
@@ -263,17 +259,22 @@ const addFee = async (req, res) => {
 
       month,
 
-      year: numericYear,
+      year:
+        numericYear,
 
-      monthlyFee: monthly,
+      monthlyFee:
+        monthly,
 
-      examFee: exam,
+      examFee:
+        exam,
 
       total,
 
-      paidAmount: paid,
+      paidAmount:
+        paid,
 
-      dueAmount: due,
+      dueAmount:
+        due,
 
       paymentStatus,
 
@@ -289,9 +290,11 @@ const addFee = async (req, res) => {
       /* Full payment history */
       payments,
 
-      createdAt: new Date(),
+      createdAt:
+        new Date(),
 
-      updatedAt: new Date(),
+      updatedAt:
+        new Date(),
     };
 
     /* -------------------------------------------------------
@@ -326,7 +329,8 @@ const addFee = async (req, res) => {
           ? {
               invoiceNumber,
 
-              amount: paid,
+              amount:
+                paid,
 
               date:
                 getPaymentDate(
@@ -380,7 +384,8 @@ const getFees = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      fees: normalizedFees,
+      fees:
+        normalizedFees,
     });
   } catch (error) {
     console.error(
@@ -402,7 +407,8 @@ const getFees = async (req, res) => {
 
 const getFeeById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     /* -------------------------------------------------------
        ID VALIDATION
@@ -422,7 +428,8 @@ const getFeeById = async (req, res) => {
 
     const fee =
       await getCollection().findOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     if (!fee) {
@@ -447,7 +454,8 @@ const getFeeById = async (req, res) => {
     return res.status(200).json({
       success: true,
 
-      fee: normalizedFee,
+      fee:
+        normalizedFee,
     });
   } catch (error) {
     console.error(
@@ -469,7 +477,8 @@ const getFeeById = async (req, res) => {
 
 const addPayment = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     const {
       amount,
@@ -509,7 +518,8 @@ const addPayment = async (req, res) => {
 
     const fee =
       await getCollection().findOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     if (!fee) {
@@ -585,6 +595,7 @@ const addPayment = async (req, res) => {
 
     /* -------------------------------------------------------
        NEW INVOICE
+       Example: #583
     ------------------------------------------------------- */
 
     const invoiceNumber =
@@ -624,7 +635,8 @@ const addPayment = async (req, res) => {
 
     await getCollection().updateOne(
       {
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       },
 
       {
@@ -661,7 +673,8 @@ const addPayment = async (req, res) => {
 
     const updatedFee =
       await getCollection().findOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     /* -------------------------------------------------------
@@ -674,7 +687,8 @@ const addPayment = async (req, res) => {
       message:
         "Payment added successfully",
 
-      fee: updatedFee,
+      fee:
+        updatedFee,
 
       invoice: {
         invoiceNumber,
@@ -708,7 +722,8 @@ const addPayment = async (req, res) => {
 
 const updateFee = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     /* -------------------------------------------------------
        ID VALIDATION
@@ -763,7 +778,8 @@ const updateFee = async (req, res) => {
 
     const existingFee =
       await getCollection().findOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     if (!existingFee) {
@@ -856,7 +872,8 @@ const updateFee = async (req, res) => {
     const result =
       await getCollection().updateOne(
         {
-          _id: new ObjectId(id),
+          _id:
+            new ObjectId(id),
         },
 
         {
@@ -879,7 +896,8 @@ const updateFee = async (req, res) => {
 
     const updatedFee =
       await getCollection().findOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     const normalizedFee = {
@@ -920,7 +938,8 @@ const updateFee = async (req, res) => {
 
 const deleteFee = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     /* -------------------------------------------------------
        ID VALIDATION
@@ -940,7 +959,8 @@ const deleteFee = async (req, res) => {
 
     const result =
       await getCollection().deleteOne({
-        _id: new ObjectId(id),
+        _id:
+          new ObjectId(id),
       });
 
     if (!result.deletedCount) {

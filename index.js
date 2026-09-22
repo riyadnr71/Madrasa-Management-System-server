@@ -12,6 +12,8 @@ const { connectDB } = require("./config/db");
 // AUTH
 const authRoutes = require("./routes/authRoutes");
 
+
+
 // STUDENTS
 const studentRoutes = require("./routes/studentRoutes");
 
@@ -44,6 +46,8 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 
 // REPORTS
 const reportRoutes = require("./routes/reportRoutes");
+
+const seatPlanRoutes = require("./routes/seatPlanRoutes");
 
 // =========================================================
 // APP
@@ -243,6 +247,16 @@ app.use(
   "/api/public-notices",
   publicNoticeRoutes
 );
+
+
+  app.use(
+  "/api/seat-plan",
+  seatPlanRoutes
+);
+
+
+
+
 
 // =========================================================
 // 404
