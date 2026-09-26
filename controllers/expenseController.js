@@ -29,9 +29,70 @@ const generateExpenseId = async (collection) => {
   }
 
   const lastId = lastExpense[0].expenseId || "EXP-0000";
-  const lastNumber = parseInt(lastId.replace(/\D/g, ""), 10) || 0;
+
+  const lastNumber =
+    parseInt(lastId.replace(/\D/g, ""), 10) || 0;
 
   return `EXP-${String(lastNumber + 1).padStart(4, "0")}`;
+};
+
+// =========================================================
+// GENERATE SALARY PAYMENT INVOICE NUMBER
+// =========================================================
+
+const generatePaymentInvoiceNumber = async (collection) => {
+  const expenses = await collection
+    .find({
+      expenseType: "Teacher Salary",
+      payments: {
+        $exists: true,
+        $ne: [],
+      },
+    })
+    .toArray();
+
+  let lastNumber = 0;
+
+  for (const expense of expenses) {
+    const payments = Array.isArray(expense.payments)
+      ? expense.payments
+      : [];
+
+    for (const payment of payments) {
+      const invoiceNumber = payment.invoiceNumber || "";
+
+      const match = invoiceNumber.match(/(\d+)$/);
+
+      if (match) {
+        const number = parseInt(match[1], 10);
+
+        if (number > lastNumber) {
+          lastNumber = number;
+        }
+      }
+    }
+  }
+
+  return `SAL-${String(lastNumber + 1).padStart(4, "0")}`;
+};
+
+// =========================================================
+// PAYMENT STATUS
+// =========================================================
+
+const getPaymentStatus = (amount, paidAmount) => {
+  const total = Number(amount || 0);
+  const paid = Number(paidAmount || 0);
+
+  if (paid <= 0) {
+    return "Due";
+  }
+
+  if (paid >= total) {
+    return "Paid";
+  }
+
+  return "Partial";
 };
 
 // =========================================================
@@ -52,6 +113,7 @@ const addExpense = async (req, res) => {
       year,
       expenseDate,
       amount,
+      paymentAmount,
       paymentMethod,
       note,
       teacherId,
@@ -96,7 +158,14 @@ const addExpense = async (req, res) => {
       });
     }
 
-    if (!amount || Number(amount) <= 0) {
+    // -------------------------------------------------------
+    // NORMAL EXPENSE AMOUNT VALIDATION
+    // -------------------------------------------------------
+
+    if (
+      expenseType !== "Teacher Salary" &&
+      (!amount || Number(amount) <= 0)
+    ) {
       return res.status(400).json({
         success: false,
         message: "Valid amount is required",
@@ -104,7 +173,7 @@ const addExpense = async (req, res) => {
     }
 
     // -------------------------------------------------------
-    // OTHER TITLE
+    // OTHER EXPENSE TITLE
     // -------------------------------------------------------
 
     if (expenseType === "Other" && !title?.trim()) {
@@ -115,20 +184,42 @@ const addExpense = async (req, res) => {
     }
 
     // -------------------------------------------------------
-    // TEACHER SALARY
+    // DEFAULT VALUES
     // -------------------------------------------------------
 
     let teacherData = null;
-    let finalAmount = Number(amount);
+
+    let finalAmount = Number(amount) || 0;
+
     let finalTitle = title?.trim() || expenseType;
 
+    let paidAmount = 0;
+
+    let dueAmount = 0;
+
+    let paymentStatus = "Paid";
+
+    let payments = [];
+
+    // =======================================================
+    // TEACHER SALARY
+    // =======================================================
+
     if (expenseType === "Teacher Salary") {
+      // -----------------------------------------------------
+      // TEACHER REQUIRED
+      // -----------------------------------------------------
+
       if (!teacherId) {
         return res.status(400).json({
           success: false,
           message: "Please select a teacher",
         });
       }
+
+      // -----------------------------------------------------
+      // FIND TEACHER
+      // -----------------------------------------------------
 
       teacherData = await teachersCollection.findOne({
         teacherId: String(teacherId).trim(),
@@ -141,7 +232,10 @@ const addExpense = async (req, res) => {
         });
       }
 
-      // Teacher-এর database salary automatically নেওয়া হবে
+      // -----------------------------------------------------
+      // AUTO LOAD FULL SALARY
+      // -----------------------------------------------------
+
       finalAmount = Number(teacherData.salary) || 0;
 
       if (finalAmount <= 0) {
@@ -155,7 +249,6 @@ const addExpense = async (req, res) => {
 
       // -----------------------------------------------------
       // DUPLICATE SALARY CHECK
-      // একই teacher + একই month + year
       // -----------------------------------------------------
 
       const existingSalary = await expensesCollection.findOne({
@@ -171,17 +264,89 @@ const addExpense = async (req, res) => {
           message: `${teacherData.name} already has salary added for ${month} ${year}`,
         });
       }
+
+      // -----------------------------------------------------
+      // INITIAL PAYMENT
+      // -----------------------------------------------------
+
+      const initialPayment = Number(paymentAmount || 0);
+
+      if (initialPayment < 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount cannot be negative",
+        });
+      }
+
+      if (initialPayment > finalAmount) {
+        return res.status(400).json({
+          success: false,
+          message: "Payment amount cannot be greater than salary",
+        });
+      }
+
+      paidAmount = initialPayment;
+
+      dueAmount = Math.max(
+        finalAmount - paidAmount,
+        0
+      );
+
+      paymentStatus = getPaymentStatus(
+        finalAmount,
+        paidAmount
+      );
+
+      // -----------------------------------------------------
+      // FIRST PAYMENT HISTORY
+      // -----------------------------------------------------
+
+      if (initialPayment > 0) {
+        const invoiceNumber =
+          await generatePaymentInvoiceNumber(
+            expensesCollection
+          );
+
+        payments.push({
+          amount: initialPayment,
+
+          date: expenseDate,
+
+          paymentMethod: paymentMethod || "Cash",
+
+          note: note?.trim() || "",
+
+          invoiceNumber,
+
+          createdAt: new Date(),
+        });
+      }
     }
 
-    // -------------------------------------------------------
-    // EXPENSE ID
-    // -------------------------------------------------------
+    // =======================================================
+    // NORMAL EXPENSE
+    // =======================================================
 
-    const expenseId = await generateExpenseId(expensesCollection);
+    else {
+      paidAmount = finalAmount;
 
-    // -------------------------------------------------------
+      dueAmount = 0;
+
+      paymentStatus = "Paid";
+    }
+
+    // =======================================================
+    // GENERATE EXPENSE ID
+    // =======================================================
+
+    const expenseId =
+      await generateExpenseId(
+        expensesCollection
+      );
+
+    // =======================================================
     // EXPENSE DOCUMENT
-    // -------------------------------------------------------
+    // =======================================================
 
     const expense = {
       expenseId,
@@ -196,7 +361,20 @@ const addExpense = async (req, res) => {
 
       expenseDate,
 
+      // Full expense / full salary
       amount: finalAmount,
+
+      // Actually paid
+      paidAmount,
+
+      // Remaining amount
+      dueAmount,
+
+      // Due / Partial / Paid
+      paymentStatus,
+
+      // Payment history
+      payments,
 
       paymentMethod: paymentMethod || "Cash",
 
@@ -222,13 +400,24 @@ const addExpense = async (req, res) => {
       updatedAt: new Date(),
     };
 
-    const result = await expensesCollection.insertOne(expense);
+    // =======================================================
+    // SAVE
+    // =======================================================
+
+    const result =
+      await expensesCollection.insertOne(expense);
 
     return res.status(201).json({
       success: true,
-      message: "Expense added successfully",
+
+      message:
+        expenseType === "Teacher Salary"
+          ? "Teacher salary added successfully"
+          : "Expense added successfully",
+
       expense: {
         ...expense,
+
         _id: result.insertedId,
       },
     });
@@ -251,7 +440,8 @@ const getExpenses = async (req, res) => {
   try {
     const db = getDB();
 
-    const expensesCollection = db.collection("expenses");
+    const expensesCollection =
+      db.collection("expenses");
 
     const expenses = await expensesCollection
       .find({})
@@ -283,7 +473,8 @@ const getExpenseById = async (req, res) => {
   try {
     const db = getDB();
 
-    const expensesCollection = db.collection("expenses");
+    const expensesCollection =
+      db.collection("expenses");
 
     const { id } = req.params;
 
@@ -294,9 +485,10 @@ const getExpenseById = async (req, res) => {
       });
     }
 
-    const expense = await expensesCollection.findOne({
-      _id: new ObjectId(id),
-    });
+    const expense =
+      await expensesCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
     if (!expense) {
       return res.status(404).json({
@@ -327,8 +519,11 @@ const updateExpense = async (req, res) => {
   try {
     const db = getDB();
 
-    const expensesCollection = db.collection("expenses");
-    const teachersCollection = db.collection("teachers");
+    const expensesCollection =
+      db.collection("expenses");
+
+    const teachersCollection =
+      db.collection("teachers");
 
     const { id } = req.params;
 
@@ -339,9 +534,10 @@ const updateExpense = async (req, res) => {
       });
     }
 
-    const existingExpense = await expensesCollection.findOne({
-      _id: new ObjectId(id),
-    });
+    const existingExpense =
+      await expensesCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
     if (!existingExpense) {
       return res.status(404).json({
@@ -362,23 +558,28 @@ const updateExpense = async (req, res) => {
       teacherId,
     } = req.body;
 
-    if (!expenseType || !month || !year || !expenseDate) {
+    if (
+      !expenseType ||
+      !month ||
+      !year ||
+      !expenseDate
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Expense type, month, year and date are required",
+        message:
+          "Expense type, month, year and date are required",
       });
     }
 
-    let finalAmount = Number(amount);
-    let finalTitle = title?.trim() || expenseType;
+    let finalAmount =
+      Number(amount) || 0;
 
-    let finalTeacherId = "";
-    let finalTeacherName = "";
-    let finalTeacherDesignation = "";
+    let finalTitle =
+      title?.trim() || expenseType;
 
-    // -------------------------------------------------------
+    // =======================================================
     // TEACHER SALARY UPDATE
-    // -------------------------------------------------------
+    // =======================================================
 
     if (expenseType === "Teacher Salary") {
       if (!teacherId) {
@@ -388,9 +589,10 @@ const updateExpense = async (req, res) => {
         });
       }
 
-      const teacher = await teachersCollection.findOne({
-        teacherId: String(teacherId).trim(),
-      });
+      const teacher =
+        await teachersCollection.findOne({
+          teacherId: String(teacherId).trim(),
+        });
 
       if (!teacher) {
         return res.status(404).json({
@@ -399,30 +601,37 @@ const updateExpense = async (req, res) => {
         });
       }
 
-      finalAmount = Number(teacher.salary) || 0;
+      finalAmount =
+        Number(teacher.salary) || 0;
 
       if (finalAmount <= 0) {
         return res.status(400).json({
           success: false,
-          message: "Selected teacher has no valid salary",
+          message:
+            "Selected teacher has no valid salary",
         });
       }
 
       finalTitle = "Teacher Salary";
 
-      finalTeacherId = teacher.teacherId;
-      finalTeacherName = teacher.name;
-      finalTeacherDesignation = teacher.designation || "";
+      // -----------------------------------------------------
+      // DUPLICATE CHECK
+      // -----------------------------------------------------
 
-      const duplicateSalary = await expensesCollection.findOne({
-        _id: {
-          $ne: new ObjectId(id),
-        },
-        expenseType: "Teacher Salary",
-        teacherId: finalTeacherId,
-        month: String(month).trim(),
-        year: Number(year),
-      });
+      const duplicateSalary =
+        await expensesCollection.findOne({
+          _id: {
+            $ne: new ObjectId(id),
+          },
+
+          expenseType: "Teacher Salary",
+
+          teacherId: teacher.teacherId,
+
+          month: String(month).trim(),
+
+          year: Number(year),
+        });
 
       if (duplicateSalary) {
         return res.status(409).json({
@@ -430,20 +639,132 @@ const updateExpense = async (req, res) => {
           message: `${teacher.name} already has salary added for ${month} ${year}`,
         });
       }
-    } else {
-      if (!amount || Number(amount) <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: "Valid amount is required",
-        });
+
+      // -----------------------------------------------------
+      // KEEP EXISTING PAYMENT HISTORY
+      // -----------------------------------------------------
+
+      const existingPayments =
+        Array.isArray(existingExpense.payments)
+          ? existingExpense.payments
+          : [];
+
+      let paidAmount = 0;
+
+      if (existingPayments.length > 0) {
+        paidAmount =
+          existingPayments.reduce(
+            (sum, payment) =>
+              sum + Number(payment.amount || 0),
+            0
+          );
+      } else if (
+        existingExpense.paidAmount !== undefined
+      ) {
+        paidAmount =
+          Number(existingExpense.paidAmount) || 0;
+      } else {
+        // Old salary records were treated as fully paid
+        paidAmount =
+          Number(existingExpense.amount) || 0;
       }
 
-      if (expenseType === "Other" && !title?.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: "Expense title is required for Other",
+      const dueAmount = Math.max(
+        finalAmount - paidAmount,
+        0
+      );
+
+      const paymentStatus =
+        getPaymentStatus(
+          finalAmount,
+          paidAmount
+        );
+
+      const updatedExpense = {
+        expenseType,
+
+        title: finalTitle,
+
+        month: String(month).trim(),
+
+        year: Number(year),
+
+        expenseDate,
+
+        amount: finalAmount,
+
+        paidAmount,
+
+        dueAmount,
+
+        paymentStatus,
+
+        payments: existingPayments,
+
+        paymentMethod:
+          paymentMethod ||
+          existingExpense.paymentMethod ||
+          "Cash",
+
+        note:
+          note?.trim() ||
+          existingExpense.note ||
+          "",
+
+        teacherId: teacher.teacherId,
+
+        teacherName: teacher.name,
+
+        teacherDesignation:
+          teacher.designation || "",
+
+        updatedAt: new Date(),
+      };
+
+      await expensesCollection.updateOne(
+        {
+          _id: new ObjectId(id),
+        },
+        {
+          $set: updatedExpense,
+        }
+      );
+
+      const result =
+        await expensesCollection.findOne({
+          _id: new ObjectId(id),
         });
-      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Expense updated successfully",
+        expense: result,
+      });
+    }
+
+    // =======================================================
+    // NORMAL EXPENSE UPDATE
+    // =======================================================
+
+    if (
+      !amount ||
+      Number(amount) <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid amount is required",
+      });
+    }
+
+    if (
+      expenseType === "Other" &&
+      !title?.trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Expense title is required for Other",
+      });
     }
 
     const updatedExpense = {
@@ -459,15 +780,22 @@ const updateExpense = async (req, res) => {
 
       amount: finalAmount,
 
-      paymentMethod: paymentMethod || "Cash",
+      paidAmount: finalAmount,
+
+      dueAmount: 0,
+
+      paymentStatus: "Paid",
+
+      paymentMethod:
+        paymentMethod || "Cash",
 
       note: note?.trim() || "",
 
-      teacherId: finalTeacherId,
+      teacherId: "",
 
-      teacherName: finalTeacherName,
+      teacherName: "",
 
-      teacherDesignation: finalTeacherDesignation,
+      teacherDesignation: "",
 
       updatedAt: new Date(),
     };
@@ -481,9 +809,10 @@ const updateExpense = async (req, res) => {
       }
     );
 
-    const result = await expensesCollection.findOne({
-      _id: new ObjectId(id),
-    });
+    const result =
+      await expensesCollection.findOne({
+        _id: new ObjectId(id),
+      });
 
     return res.status(200).json({
       success: true,
@@ -502,6 +831,264 @@ const updateExpense = async (req, res) => {
 };
 
 // =========================================================
+// ADD SALARY PAYMENT
+// =========================================================
+
+const addSalaryPayment = async (req, res) => {
+  try {
+    const db = getDB();
+
+    const expensesCollection =
+      db.collection("expenses");
+
+    const { id } = req.params;
+
+    const {
+      amount,
+      paymentMethod,
+      note,
+      paymentDate,
+    } = req.body;
+
+    // -------------------------------------------------------
+    // VALIDATE ID
+    // -------------------------------------------------------
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid expense ID",
+      });
+    }
+
+    // -------------------------------------------------------
+    // FIND EXPENSE
+    // -------------------------------------------------------
+
+    const expense =
+      await expensesCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+    if (!expense) {
+      return res.status(404).json({
+        success: false,
+        message: "Expense not found",
+      });
+    }
+
+    // -------------------------------------------------------
+    // ONLY TEACHER SALARY
+    // -------------------------------------------------------
+
+    if (
+      expense.expenseType !==
+      "Teacher Salary"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Payment can only be added to teacher salary",
+      });
+    }
+
+    // -------------------------------------------------------
+    // PAYMENT AMOUNT
+    // -------------------------------------------------------
+
+    const paymentAmount =
+      Number(amount);
+
+    if (
+      !paymentAmount ||
+      paymentAmount <= 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid payment amount is required",
+      });
+    }
+
+    // -------------------------------------------------------
+    // EXISTING PAYMENTS
+    // -------------------------------------------------------
+
+    const existingPayments =
+      Array.isArray(expense.payments)
+        ? expense.payments
+        : [];
+
+    // -------------------------------------------------------
+    // CURRENT PAID
+    // -------------------------------------------------------
+
+    let currentPaid =
+      existingPayments.reduce(
+        (sum, payment) =>
+          sum +
+          Number(payment.amount || 0),
+        0
+      );
+
+    // -------------------------------------------------------
+    // BACKWARD COMPATIBILITY
+    // -------------------------------------------------------
+
+    if (
+      !existingPayments.length &&
+      Number(expense.paidAmount || 0) > 0
+    ) {
+      currentPaid =
+        Number(expense.paidAmount || 0);
+    }
+
+    const totalAmount =
+      Number(expense.amount || 0);
+
+    const currentDue = Math.max(
+      totalAmount - currentPaid,
+      0
+    );
+
+    // -------------------------------------------------------
+    // ALREADY FULLY PAID
+    // -------------------------------------------------------
+
+    if (currentDue <= 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This salary is already fully paid",
+      });
+    }
+
+    // -------------------------------------------------------
+    // DON'T ALLOW OVERPAYMENT
+    // -------------------------------------------------------
+
+    if (paymentAmount > currentDue) {
+      return res.status(400).json({
+        success: false,
+        message:
+          `Maximum payment allowed is ৳${currentDue.toLocaleString()}`,
+      });
+    }
+
+    // -------------------------------------------------------
+    // GENERATE INVOICE
+    // -------------------------------------------------------
+
+    const invoiceNumber =
+      await generatePaymentInvoiceNumber(
+        expensesCollection
+      );
+
+    // -------------------------------------------------------
+    // NEW PAYMENT
+    // -------------------------------------------------------
+
+    const newPayment = {
+      amount: paymentAmount,
+
+      date:
+        paymentDate ||
+        new Date().toISOString(),
+
+      paymentMethod:
+        paymentMethod || "Cash",
+
+      note:
+        note?.trim() || "",
+
+      invoiceNumber,
+
+      createdAt: new Date(),
+    };
+
+    // -------------------------------------------------------
+    // NEW TOTALS
+    // -------------------------------------------------------
+
+    const newPaid =
+      currentPaid + paymentAmount;
+
+    const newDue = Math.max(
+      totalAmount - newPaid,
+      0
+    );
+
+    const newStatus =
+      getPaymentStatus(
+        totalAmount,
+        newPaid
+      );
+
+    // -------------------------------------------------------
+    // UPDATE DATABASE
+    // -------------------------------------------------------
+
+    await expensesCollection.updateOne(
+      {
+        _id: new ObjectId(id),
+      },
+      {
+        $set: {
+          paidAmount: newPaid,
+
+          dueAmount: newDue,
+
+          paymentStatus: newStatus,
+
+          payments: [
+            ...existingPayments,
+            newPayment,
+          ],
+
+          paymentMethod:
+            paymentMethod || "Cash",
+
+          updatedAt: new Date(),
+        },
+      }
+    );
+
+    // -------------------------------------------------------
+    // UPDATED EXPENSE
+    // -------------------------------------------------------
+
+    const updatedExpense =
+      await expensesCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Salary payment added successfully",
+
+      expense: updatedExpense,
+
+      payment: newPayment,
+    });
+  } catch (error) {
+    console.error(
+      "Add Salary Payment Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to add salary payment",
+
+      error: error.message,
+    });
+  }
+};
+
+// =========================================================
 // DELETE EXPENSE
 // =========================================================
 
@@ -509,7 +1096,8 @@ const deleteExpense = async (req, res) => {
   try {
     const db = getDB();
 
-    const expensesCollection = db.collection("expenses");
+    const expensesCollection =
+      db.collection("expenses");
 
     const { id } = req.params;
 
@@ -520,9 +1108,10 @@ const deleteExpense = async (req, res) => {
       });
     }
 
-    const result = await expensesCollection.deleteOne({
-      _id: new ObjectId(id),
-    });
+    const result =
+      await expensesCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
 
     if (!result.deletedCount) {
       return res.status(404).json({
@@ -533,14 +1122,19 @@ const deleteExpense = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Expense deleted successfully",
+      message:
+        "Expense deleted successfully",
     });
   } catch (error) {
-    console.error("Delete Expense Error:", error);
+    console.error(
+      "Delete Expense Error:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete expense",
+      message:
+        "Failed to delete expense",
     });
   }
 };
@@ -554,5 +1148,6 @@ module.exports = {
   getExpenses,
   getExpenseById,
   updateExpense,
+  addSalaryPayment,
   deleteExpense,
 };

@@ -1,4 +1,5 @@
 const express = require("express");
+
 const router = express.Router();
 
 const authMiddleware = require("../middleware/authMiddleware");
@@ -14,6 +15,7 @@ const {
 
 /* =========================================================
    GET ALL FEES
+   GET /api/fees
 ========================================================= */
 
 router.get(
@@ -23,17 +25,8 @@ router.get(
 );
 
 /* =========================================================
-   GET SINGLE FEE
-========================================================= */
-
-router.get(
-  "/:id",
-  authMiddleware,
-  getFeeById
-);
-
-/* =========================================================
    ADD FEE
+   POST /api/fees
 ========================================================= */
 
 router.post(
@@ -44,6 +37,7 @@ router.post(
 
 /* =========================================================
    ADD PAYMENT
+   POST /api/fees/:id/payment
 ========================================================= */
 
 router.post(
@@ -54,6 +48,7 @@ router.post(
 
 /* =========================================================
    UPDATE FEE
+   PUT /api/fees/:id
 ========================================================= */
 
 router.put(
@@ -64,12 +59,26 @@ router.put(
 
 /* =========================================================
    DELETE FEE
+   DELETE /api/fees/:id
 ========================================================= */
 
 router.delete(
   "/:id",
   authMiddleware,
   deleteFee
+);
+
+/* =========================================================
+   GET SINGLE FEE
+   GET /api/fees/:id
+
+   Keep this after payment route for clarity.
+========================================================= */
+
+router.get(
+  "/:id",
+  authMiddleware,
+  getFeeById
 );
 
 module.exports = router;

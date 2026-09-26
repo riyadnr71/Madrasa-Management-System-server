@@ -1,9 +1,17 @@
-
 const { ObjectId } = require("mongodb");
 const { Readable } = require("stream");
+const QRCode = require("qrcode");
+const bcrypt = require("bcryptjs");
 
 const { getDB } = require("../config/db");
 const cloudinary = require("../config/cloudinary");
+
+/* =========================================================
+   CONFIG
+========================================================= */
+
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "http://localhost:5173";
 
 /* =========================================================
    CLOUDINARY UPLOAD
@@ -26,10 +34,41 @@ const uploadToCloudinary = (fileBuffer) => {
         }
       );
 
-    Readable.from(fileBuffer).pipe(
-      uploadStream
-    );
+    Readable.from(fileBuffer).pipe(uploadStream);
   });
+};
+
+/* =========================================================
+   GENERATE STUDENT PASSWORD
+========================================================= */
+
+const generateStudentPassword = () => {
+  const randomNumber = Math.floor(
+    100000 + Math.random() * 900000
+  );
+
+  return `NR${randomNumber}`;
+};
+
+/* =========================================================
+   GENERATE STUDENT QR
+========================================================= */
+
+const generateStudentQR = async (studentId) => {
+  const baseUrl =
+    FRONTEND_URL.replace(/\/$/, "");
+
+  const studentPortalUrl =
+    `${baseUrl}/student/${studentId}`;
+
+  return await QRCode.toDataURL(
+    studentPortalUrl,
+    {
+      errorCorrectionLevel: "H",
+      margin: 2,
+      width: 500,
+    }
+  );
 };
 
 /* =========================================================
@@ -52,7 +91,6 @@ const addStudent = async (req, res) => {
       bloodGroup,
       religion,
       nationality,
-
       fatherName,
       fatherMobile,
       motherName,
@@ -60,31 +98,42 @@ const addStudent = async (req, res) => {
       guardianName,
       guardianMobile,
       guardianRelation,
-
       presentAddress,
       permanentAddress,
-
       admissionDate,
       previousInstitution,
       previousClass,
       status,
     } = req.body;
 
-    /* ================= VALIDATION ================= */
+    /* =====================================================
+       VALIDATION
+    ===================================================== */
 
-    if (
-      !name?.trim() ||
-      !idCard?.trim() ||
-      !className?.trim()
-    ) {
+    if (!name?.trim()) {
       return res.status(400).json({
         success: false,
-        message:
-          "Student name, student ID and class are required",
+        message: "Student name is required",
       });
     }
 
-    /* ================= DUPLICATE ID ================= */
+    if (!idCard?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Student ID is required",
+      });
+    }
+
+    if (!className?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Class is required",
+      });
+    }
+
+    /* =====================================================
+       DUPLICATE STUDENT ID
+    ===================================================== */
 
     const existingStudent =
       await db.collection("students").findOne({
@@ -95,132 +144,167 @@ const addStudent = async (req, res) => {
       return res.status(409).json({
         success: false,
         message:
-          "A student with this ID already exists",
+          "A student with this Student ID already exists",
       });
     }
 
-    /* ================= IMAGE ================= */
+    /* =====================================================
+       IMAGE
+    ===================================================== */
 
     let image = null;
     let imagePublicId = null;
 
-    console.log(
-      "Received file:",
-      req.file
-        ? {
-            fieldname: req.file.fieldname,
-            originalname: req.file.originalname,
-            mimetype: req.file.mimetype,
-            size: req.file.size,
-          }
-        : "NO FILE"
-    );
-
-    if (req.file) {
-      try {
-        const uploadedImage =
-          await uploadToCloudinary(
-            req.file.buffer
-          );
-
-        image =
-          uploadedImage.secure_url;
-
-        imagePublicId =
-          uploadedImage.public_id;
-
-        console.log(
-          "Cloudinary Upload Success:",
-          {
-            image,
-            imagePublicId,
-          }
-        );
-      } catch (uploadError) {
-        console.error(
-          "Cloudinary Upload Error:",
-          uploadError
+    if (req.file?.buffer) {
+      const uploadedImage =
+        await uploadToCloudinary(
+          req.file.buffer
         );
 
-        return res.status(500).json({
-          success: false,
-          message:
-            "Student image upload failed",
-        });
-      }
+      image =
+        uploadedImage.secure_url ||
+        uploadedImage.url ||
+        null;
+
+      imagePublicId =
+        uploadedImage.public_id ||
+        null;
     }
 
-    /* ================= STUDENT ================= */
+    /* =====================================================
+       PASSWORD
+    ===================================================== */
+
+    const generatedPassword =
+      generateStudentPassword();
+
+    const passwordHash =
+      await bcrypt.hash(
+        generatedPassword,
+        10
+      );
+
+    /* =====================================================
+       STUDENT DATA
+    ===================================================== */
 
     const now = new Date();
 
     const student = {
       name: name.trim(),
       idCard: idCard.trim(),
-      roll: roll?.trim() || "",
+      roll: roll || "",
       className: className.trim(),
-      section: section?.trim() || "",
-      session: session?.trim() || "",
+      section: section || "",
+      session: session || "",
 
       dateOfBirth: dateOfBirth || "",
       gender: gender || "",
       bloodGroup: bloodGroup || "",
       religion: religion || "",
       nationality:
-        nationality?.trim() ||
-        "Bangladeshi",
+        nationality || "Bangladeshi",
 
-      fatherName:
-        fatherName?.trim() || "",
-      fatherMobile:
-        fatherMobile?.trim() || "",
+      fatherName: fatherName || "",
+      fatherMobile: fatherMobile || "",
 
-      motherName:
-        motherName?.trim() || "",
-      motherMobile:
-        motherMobile?.trim() || "",
+      motherName: motherName || "",
+      motherMobile: motherMobile || "",
 
-      guardianName:
-        guardianName?.trim() || "",
+      guardianName: guardianName || "",
       guardianMobile:
-        guardianMobile?.trim() || "",
+        guardianMobile || "",
       guardianRelation:
-        guardianRelation?.trim() || "",
+        guardianRelation || "",
 
       presentAddress:
-        presentAddress?.trim() || "",
+        presentAddress || "",
+
       permanentAddress:
-        permanentAddress?.trim() || "",
+        permanentAddress || "",
 
       admissionDate:
         admissionDate || "",
-      previousInstitution:
-        previousInstitution?.trim() || "",
-      previousClass:
-        previousClass?.trim() || "",
 
-      status: status || "Active",
+      previousInstitution:
+        previousInstitution || "",
+
+      previousClass:
+        previousClass || "",
+
+      status:
+        status || "Active",
 
       image,
       imagePublicId,
+
+      passwordHash,
+
+      qrCode: null,
 
       createdAt: now,
       updatedAt: now,
     };
 
-    /* ================= INSERT ================= */
+    /* =====================================================
+       INSERT
+    ===================================================== */
 
-    const result = await db
+    const result =
+      await db.collection("students").insertOne(
+        student
+      );
+
+    const studentMongoId =
+      result.insertedId.toString();
+
+    /* =====================================================
+       QR
+    ===================================================== */
+
+    const qrCode =
+      await generateStudentQR(
+        studentMongoId
+      );
+
+    await db
       .collection("students")
-      .insertOne(student);
+      .updateOne(
+        {
+          _id: result.insertedId,
+        },
+        {
+          $set: {
+            qrCode,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+    /* =====================================================
+       CREATED STUDENT
+    ===================================================== */
+
+    const createdStudent =
+      await db
+        .collection("students")
+        .findOne({
+          _id: result.insertedId,
+        });
+
+    delete createdStudent.passwordHash;
 
     return res.status(201).json({
       success: true,
       message:
         "Student added successfully",
-      student: {
-        ...student,
-        _id: result.insertedId,
+
+      student: createdStudent,
+
+      /* IMPORTANT */
+      login: {
+        studentId: idCard.trim(),
+        password: generatedPassword,
       },
     });
   } catch (error) {
@@ -233,29 +317,42 @@ const addStudent = async (req, res) => {
       success: false,
       message:
         "Failed to add student",
-      error: error.message,
     });
   }
 };
 
 /* =========================================================
-   GET STUDENTS
+   GET ALL STUDENTS
 ========================================================= */
 
 const getStudents = async (req, res) => {
   try {
     const db = getDB();
 
-    const students = await db
-      .collection("students")
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray();
+    const students =
+      await db
+        .collection("students")
+        .find({})
+        .sort({
+          createdAt: -1,
+        })
+        .toArray();
+
+    const safeStudents =
+      students.map((student) => {
+        const safeStudent = {
+          ...student,
+        };
+
+        delete safeStudent.passwordHash;
+
+        return safeStudent;
+      });
 
     return res.status(200).json({
       success: true,
-      count: students.length,
-      students,
+      count: safeStudents.length,
+      students: safeStudents,
     });
   } catch (error) {
     console.error(
@@ -267,42 +364,44 @@ const getStudents = async (req, res) => {
       success: false,
       message:
         "Failed to fetch students",
-      error: error.message,
     });
   }
 };
 
 /* =========================================================
-   GET STUDENT BY ID
+   GET SINGLE STUDENT
 ========================================================= */
 
-const getStudentById = async (
-  req,
-  res
-) => {
+const getStudentById = async (req, res) => {
   try {
-    const db = getDB();
-
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid student ID",
+        message:
+          "Invalid student ID",
       });
     }
 
+    const db = getDB();
+
     const student =
-      await db.collection("students").findOne({
-        _id: new ObjectId(id),
-      });
+      await db
+        .collection("students")
+        .findOne({
+          _id: new ObjectId(id),
+        });
 
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: "Student not found",
+        message:
+          "Student not found",
       });
     }
+
+    delete student.passwordHash;
 
     return res.status(200).json({
       success: true,
@@ -318,7 +417,6 @@ const getStudentById = async (
       success: false,
       message:
         "Failed to fetch student",
-      error: error.message,
     });
   }
 };
@@ -327,34 +425,35 @@ const getStudentById = async (
    UPDATE STUDENT
 ========================================================= */
 
-const updateStudent = async (
-  req,
-  res
-) => {
+const updateStudent = async (req, res) => {
   try {
-    const db = getDB();
-
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid student ID",
+        message:
+          "Invalid student ID",
       });
     }
 
-    const studentId =
+    const db = getDB();
+
+    const studentObjectId =
       new ObjectId(id);
 
     const existingStudent =
-      await db.collection("students").findOne({
-        _id: studentId,
-      });
+      await db
+        .collection("students")
+        .findOne({
+          _id: studentObjectId,
+        });
 
     if (!existingStudent) {
       return res.status(404).json({
         success: false,
-        message: "Student not found",
+        message:
+          "Student not found",
       });
     }
 
@@ -370,7 +469,6 @@ const updateStudent = async (
       bloodGroup,
       religion,
       nationality,
-
       fatherName,
       fatherMobile,
       motherName,
@@ -378,49 +476,63 @@ const updateStudent = async (
       guardianName,
       guardianMobile,
       guardianRelation,
-
       presentAddress,
       permanentAddress,
-
       admissionDate,
       previousInstitution,
       previousClass,
       status,
     } = req.body;
 
-    /* ================= VALIDATION ================= */
-
-    if (
-      !name?.trim() ||
-      !idCard?.trim() ||
-      !className?.trim()
-    ) {
+    if (!name?.trim()) {
       return res.status(400).json({
         success: false,
         message:
-          "Student name, student ID and class are required",
+          "Student name is required",
       });
     }
 
-    /* ================= DUPLICATE ID ================= */
+    if (!idCard?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Student ID is required",
+      });
+    }
+
+    if (!className?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Class is required",
+      });
+    }
+
+    /* =====================================================
+       DUPLICATE ID
+    ===================================================== */
 
     const duplicateStudent =
-      await db.collection("students").findOne({
-        idCard: idCard.trim(),
-        _id: {
-          $ne: studentId,
-        },
-      });
+      await db
+        .collection("students")
+        .findOne({
+          idCard: idCard.trim(),
+          _id: {
+            $ne: studentObjectId,
+          },
+        });
 
     if (duplicateStudent) {
       return res.status(409).json({
         success: false,
         message:
-          "Another student already uses this ID",
+          "Another student already uses this Student ID",
       });
     }
 
-    /* ================= OLD IMAGE ================= */
+    /* =====================================================
+       IMAGE
+    ===================================================== */
 
     let image =
       existingStudent.image || null;
@@ -429,146 +541,179 @@ const updateStudent = async (
       existingStudent.imagePublicId ||
       null;
 
-    let newUploadedPublicId = null;
-
-    /* ================= NEW IMAGE ================= */
-
-    if (req.file) {
-      try {
-        console.log(
-          "Update received file:",
-          req.file.originalname
-        );
-
-        const uploadedImage =
-          await uploadToCloudinary(
-            req.file.buffer
+    if (req.file?.buffer) {
+      if (imagePublicId) {
+        try {
+          await cloudinary.uploader.destroy(
+            imagePublicId
           );
+        } catch (error) {
+          console.error(
+            "Old image delete error:",
+            error
+          );
+        }
+      }
 
-        image =
-          uploadedImage.secure_url;
-
-        imagePublicId =
-          uploadedImage.public_id;
-
-        newUploadedPublicId =
-          uploadedImage.public_id;
-      } catch (uploadError) {
-        console.error(
-          "Cloudinary Update Upload Error:",
-          uploadError
+      const uploadedImage =
+        await uploadToCloudinary(
+          req.file.buffer
         );
 
-        return res.status(500).json({
-          success: false,
-          message:
-            "Student image upload failed",
-        });
-      }
+      image =
+        uploadedImage.secure_url ||
+        uploadedImage.url ||
+        null;
+
+      imagePublicId =
+        uploadedImage.public_id ||
+        null;
     }
 
-    /* ================= UPDATE DATA ================= */
+    /* =====================================================
+       PASSWORD
+    ===================================================== */
+
+    let passwordHash =
+      existingStudent.passwordHash ||
+      null;
+
+    let generatedPassword = null;
+
+    if (!passwordHash) {
+      generatedPassword =
+        generateStudentPassword();
+
+      passwordHash =
+        await bcrypt.hash(
+          generatedPassword,
+          10
+        );
+    }
+
+    /* =====================================================
+       QR
+    ===================================================== */
+
+    let qrCode =
+      existingStudent.qrCode ||
+      null;
+
+    if (!qrCode) {
+      qrCode =
+        await generateStudentQR(id);
+    }
+
+    /* =====================================================
+       UPDATE
+    ===================================================== */
 
     const updateData = {
       name: name.trim(),
       idCard: idCard.trim(),
-      roll: roll?.trim() || "",
+      roll: roll || "",
       className: className.trim(),
-      section: section?.trim() || "",
-      session: session?.trim() || "",
+      section: section || "",
+      session: session || "",
 
-      dateOfBirth: dateOfBirth || "",
+      dateOfBirth:
+        dateOfBirth || "",
+
       gender: gender || "",
-      bloodGroup: bloodGroup || "",
-      religion: religion || "",
+      bloodGroup:
+        bloodGroup || "",
+
+      religion:
+        religion || "",
+
       nationality:
-        nationality?.trim() ||
+        nationality ||
         "Bangladeshi",
 
       fatherName:
-        fatherName?.trim() || "",
+        fatherName || "",
+
       fatherMobile:
-        fatherMobile?.trim() || "",
+        fatherMobile || "",
 
       motherName:
-        motherName?.trim() || "",
+        motherName || "",
+
       motherMobile:
-        motherMobile?.trim() || "",
+        motherMobile || "",
 
       guardianName:
-        guardianName?.trim() || "",
+        guardianName || "",
+
       guardianMobile:
-        guardianMobile?.trim() || "",
+        guardianMobile || "",
+
       guardianRelation:
-        guardianRelation?.trim() || "",
+        guardianRelation || "",
 
       presentAddress:
-        presentAddress?.trim() || "",
+        presentAddress || "",
+
       permanentAddress:
-        permanentAddress?.trim() || "",
+        permanentAddress || "",
 
       admissionDate:
         admissionDate || "",
-      previousInstitution:
-        previousInstitution?.trim() || "",
-      previousClass:
-        previousClass?.trim() || "",
 
-      status: status || "Active",
+      previousInstitution:
+        previousInstitution || "",
+
+      previousClass:
+        previousClass || "",
+
+      status:
+        status || "Active",
 
       image,
       imagePublicId,
 
-      updatedAt: new Date(),
-    };
+      passwordHash,
+      qrCode,
 
-    /* ================= UPDATE ================= */
+      updatedAt:
+        new Date(),
+    };
 
     await db
       .collection("students")
       .updateOne(
-        { _id: studentId },
+        {
+          _id: studentObjectId,
+        },
         {
           $set: updateData,
         }
       );
 
-    /* ================= DELETE OLD IMAGE ================= */
-
-    if (
-      req.file &&
-      existingStudent.imagePublicId &&
-      existingStudent.imagePublicId !==
-        newUploadedPublicId
-    ) {
-      try {
-        await cloudinary.uploader.destroy(
-          existingStudent.imagePublicId
-        );
-
-        console.log(
-          "Old Cloudinary image deleted"
-        );
-      } catch (deleteError) {
-        console.error(
-          "Old image delete error:",
-          deleteError.message
-        );
-      }
-    }
-
-    /* ================= RESPONSE ================= */
-
     const updatedStudent =
-      await db.collection("students").findOne({
-        _id: studentId,
-      });
+      await db
+        .collection("students")
+        .findOne({
+          _id: studentObjectId,
+        });
+
+    delete updatedStudent.passwordHash;
 
     return res.status(200).json({
       success: true,
       message:
         "Student updated successfully",
+
       student: updatedStudent,
+
+      login: generatedPassword
+        ? {
+            studentId:
+              idCard.trim(),
+            password:
+              generatedPassword,
+          }
+        : null,
     });
   } catch (error) {
     console.error(
@@ -580,7 +725,191 @@ const updateStudent = async (
       success: false,
       message:
         "Failed to update student",
-      error: error.message,
+    });
+  }
+};
+
+/* =========================================================
+   RESET STUDENT PASSWORD
+========================================================= */
+
+const resetStudentPassword = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid student ID",
+      });
+    }
+
+    const db = getDB();
+
+    const studentObjectId =
+      new ObjectId(id);
+
+    const student =
+      await db
+        .collection("students")
+        .findOne({
+          _id: studentObjectId,
+        });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Student not found",
+      });
+    }
+
+    /* =====================================================
+       GENERATE NEW PASSWORD
+    ===================================================== */
+
+    const newPassword =
+      generateStudentPassword();
+
+    const passwordHash =
+      await bcrypt.hash(
+        newPassword,
+        10
+      );
+
+    /* =====================================================
+       UPDATE PASSWORD
+    ===================================================== */
+
+    await db
+      .collection("students")
+      .updateOne(
+        {
+          _id: studentObjectId,
+        },
+        {
+          $set: {
+            passwordHash,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Student password reset successfully",
+
+      login: {
+        studentId:
+          student.idCard,
+        password:
+          newPassword,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Reset Student Password Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to reset student password",
+    });
+  }
+};
+
+/* =========================================================
+   REGENERATE STUDENT QR
+========================================================= */
+
+const regenerateStudentQR = async (
+  req,
+  res
+) => {
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid student ID",
+      });
+    }
+
+    const db = getDB();
+
+    const studentObjectId =
+      new ObjectId(id);
+
+    const student =
+      await db
+        .collection("students")
+        .findOne({
+          _id: studentObjectId,
+        });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Student not found",
+      });
+    }
+
+    const qrCode =
+      await generateStudentQR(
+        studentObjectId.toString()
+      );
+
+    await db
+      .collection("students")
+      .updateOne(
+        {
+          _id: studentObjectId,
+        },
+        {
+          $set: {
+            qrCode,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Student QR code regenerated successfully",
+
+      qrCode,
+
+      portalUrl:
+        `${FRONTEND_URL.replace(
+          /\/$/,
+          ""
+        )}/student/${studentObjectId}`,
+    });
+  } catch (error) {
+    console.error(
+      "Regenerate QR Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to regenerate QR code",
     });
   }
 };
@@ -589,57 +918,56 @@ const updateStudent = async (
    DELETE STUDENT
 ========================================================= */
 
-const deleteStudent = async (
-  req,
-  res
-) => {
+const deleteStudent = async (req, res) => {
   try {
-    const db = getDB();
-
     const { id } = req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid student ID",
+        message:
+          "Invalid student ID",
       });
     }
 
-    const studentId =
+    const db = getDB();
+
+    const studentObjectId =
       new ObjectId(id);
 
     const student =
-      await db.collection("students").findOne({
-        _id: studentId,
-      });
+      await db
+        .collection("students")
+        .findOne({
+          _id: studentObjectId,
+        });
 
     if (!student) {
       return res.status(404).json({
         success: false,
-        message: "Student not found",
+        message:
+          "Student not found",
       });
     }
-
-    await db
-      .collection("students")
-      .deleteOne({
-        _id: studentId,
-      });
-
-    /* ================= CLOUDINARY ================= */
 
     if (student.imagePublicId) {
       try {
         await cloudinary.uploader.destroy(
           student.imagePublicId
         );
-      } catch (cloudinaryError) {
+      } catch (error) {
         console.error(
-          "Cloudinary Delete Error:",
-          cloudinaryError.message
+          "Cloudinary delete error:",
+          error
         );
       }
     }
+
+    await db
+      .collection("students")
+      .deleteOne({
+        _id: studentObjectId,
+      });
 
     return res.status(200).json({
       success: true,
@@ -656,7 +984,6 @@ const deleteStudent = async (
       success: false,
       message:
         "Failed to delete student",
-      error: error.message,
     });
   }
 };
@@ -670,6 +997,7 @@ module.exports = {
   getStudents,
   getStudentById,
   updateStudent,
+  resetStudentPassword,
+  regenerateStudentQR,
   deleteStudent,
 };
-

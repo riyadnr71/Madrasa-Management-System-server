@@ -1,13 +1,20 @@
 const { ObjectId } = require("mongodb");
 const { getDB } = require("../config/db");
 
+/* =========================================================
+   COLLECTION
+========================================================= */
+
 const getCollection = () => {
   return getDB().collection("fees");
 };
 
+const getStudentCollection = () => {
+  return getDB().collection("students");
+};
+
 /* =========================================================
    GENERATE INVOICE NUMBER
-   Format: #123
 ========================================================= */
 
 const generateInvoiceNumber = () => {
@@ -17,7 +24,7 @@ const generateInvoiceNumber = () => {
 };
 
 /* =========================================================
-   GET PAYMENT DATE
+   PAYMENT DATE
 ========================================================= */
 
 const getPaymentDate = (date) => {
@@ -29,7 +36,7 @@ const getPaymentDate = (date) => {
 };
 
 /* =========================================================
-   GET PAYMENT STATUS
+   PAYMENT STATUS
 ========================================================= */
 
 const getPaymentStatus = (paid, total) => {
@@ -46,12 +53,12 @@ const getPaymentStatus = (paid, total) => {
 
 /* =========================================================
    NORMALIZE PAYMENT HISTORY
-   Supports OLD fee records
+   Supports OLD records
 ========================================================= */
 
 const getPayments = (fee) => {
   /* -------------------------------------------------------
-     New records already have payments[]
+     New records
   ------------------------------------------------------- */
 
   if (Array.isArray(fee.payments)) {
@@ -59,10 +66,7 @@ const getPayments = (fee) => {
   }
 
   /* -------------------------------------------------------
-     OLD records may only have:
-     paidAmount
-     paymentDate
-     invoiceNumber
+     Old records
   ------------------------------------------------------- */
 
   const paidAmount = Number(fee.paidAmount) || 0;
@@ -106,6 +110,7 @@ const addFee = async (req, res) => {
       examFee,
       paidAmount,
       paymentDate,
+      invoiceNumber: requestedInvoiceNumber,
     } = req.body;
 
     /* -------------------------------------------------------
@@ -114,7 +119,6 @@ const addFee = async (req, res) => {
 
     if (
       !studentId ||
-      !studentName ||
       !className ||
       !month ||
       !year
@@ -122,31 +126,115 @@ const addFee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Student, class, month and year are required",
+          "Student, class, month and year are required.",
       });
     }
+
+    /* -------------------------------------------------------
+       FIND STUDENT
+    ------------------------------------------------------- */
+
+    let student = null;
+
+    /* MongoDB ObjectId */
+    if (ObjectId.isValid(studentId)) {
+      student =
+        await getStudentCollection().findOne({
+          _id: new ObjectId(studentId),
+        });
+    }
+
+    /* Fallback: Student ID / ID Card */
+    if (!student) {
+      student =
+        await getStudentCollection().findOne({
+          idCard: String(studentId).trim(),
+        });
+    }
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found.",
+      });
+    }
+
+    /* -------------------------------------------------------
+       FINAL STUDENT DATA
+       Prefer database data
+    ------------------------------------------------------- */
+
+    const finalStudentId =
+      student._id.toString();
+
+    const finalStudentName =
+      student.name ||
+      studentName ||
+      "";
+
+    const finalStudentIdCard =
+      student.idCard ||
+      studentIdCard ||
+      "";
+
+    const finalRoll =
+      student.roll ||
+      roll ||
+      "";
+
+    const finalClassName =
+      student.className ||
+      className ||
+      "";
+
+    const finalSession =
+      student.session ||
+      student.academicSession ||
+      session ||
+      "";
 
     /* -------------------------------------------------------
        NUMBER CONVERSION
     ------------------------------------------------------- */
 
-    const monthly = Number(monthlyFee) || 0;
-    const exam = Number(examFee) || 0;
-    const paid = Number(paidAmount) || 0;
+    const monthly =
+      Number(monthlyFee) || 0;
 
-    const numericYear = Number(year);
+    const exam =
+      Number(examFee) || 0;
+
+    const paid =
+      Number(paidAmount) || 0;
+
+    const numericYear =
+      Number(year);
+
+    /* -------------------------------------------------------
+       YEAR VALIDATION
+    ------------------------------------------------------- */
+
+    if (
+      !Number.isInteger(numericYear) ||
+      numericYear < 2000
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid year.",
+      });
+    }
 
     /* -------------------------------------------------------
        TOTAL
     ------------------------------------------------------- */
 
-    const total = monthly + exam;
+    const total =
+      monthly + exam;
 
     if (total <= 0) {
       return res.status(400).json({
         success: false,
         message:
-          "Total fee must be greater than 0",
+          "Total fee must be greater than 0.",
       });
     }
 
@@ -158,7 +246,7 @@ const addFee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Paid amount cannot be negative",
+          "Paid amount cannot be negative.",
       });
     }
 
@@ -166,19 +254,22 @@ const addFee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Paid amount cannot be greater than total fee",
+          "Paid amount cannot be greater than total fee.",
       });
     }
 
     /* -------------------------------------------------------
        DUPLICATE CHECK
-       Same student + same month + same year
+
+       Same student + month + year
     ------------------------------------------------------- */
 
     const existingFee =
       await getCollection().findOne({
-        studentId,
-        month,
+        studentId: finalStudentId,
+
+        month: String(month).trim(),
+
         year: numericYear,
       });
 
@@ -191,16 +282,17 @@ const addFee = async (req, res) => {
     }
 
     /* -------------------------------------------------------
-       CALCULATE DUE
+       DUE
     ------------------------------------------------------- */
 
-    const due = Math.max(
-      total - paid,
-      0
-    );
+    const due =
+      Math.max(
+        total - paid,
+        0
+      );
 
     /* -------------------------------------------------------
-       PAYMENT STATUS
+       STATUS
     ------------------------------------------------------- */
 
     const paymentStatus =
@@ -210,12 +302,21 @@ const addFee = async (req, res) => {
       );
 
     /* -------------------------------------------------------
-       GENERATE INVOICE
-       Example: #472
+       INVOICE
     ------------------------------------------------------- */
 
     const invoiceNumber =
+      requestedInvoiceNumber ||
       generateInvoiceNumber();
+
+    /* -------------------------------------------------------
+       PAYMENT DATE
+    ------------------------------------------------------- */
+
+    const finalPaymentDate =
+      paid > 0
+        ? getPaymentDate(paymentDate)
+        : "";
 
     /* -------------------------------------------------------
        PAYMENT HISTORY
@@ -228,9 +329,7 @@ const addFee = async (req, res) => {
               amount: paid,
 
               date:
-                getPaymentDate(
-                  paymentDate
-                ),
+                finalPaymentDate,
 
               invoiceNumber,
             },
@@ -242,22 +341,26 @@ const addFee = async (req, res) => {
     ------------------------------------------------------- */
 
     const feeData = {
-      studentId,
+      studentId:
+        finalStudentId,
 
-      studentName,
+      studentName:
+        finalStudentName,
 
       studentIdCard:
-        studentIdCard || "",
+        finalStudentIdCard,
 
       roll:
-        roll || "",
+        finalRoll,
 
-      className,
+      className:
+        finalClassName,
 
       session:
-        session || "",
+        finalSession,
 
-      month,
+      month:
+        String(month).trim(),
 
       year:
         numericYear,
@@ -278,16 +381,11 @@ const addFee = async (req, res) => {
 
       paymentStatus,
 
-      /* Latest invoice */
       invoiceNumber,
 
-      /* Payment date */
       paymentDate:
-        paid > 0
-          ? getPaymentDate(paymentDate)
-          : "",
+        finalPaymentDate,
 
-      /* Full payment history */
       payments,
 
       createdAt:
@@ -306,10 +404,32 @@ const addFee = async (req, res) => {
         feeData
       );
 
+    /* -------------------------------------------------------
+       SAVED FEE
+    ------------------------------------------------------- */
+
     const savedFee = {
-      _id: result.insertedId,
+      _id:
+        result.insertedId,
+
       ...feeData,
     };
+
+    /* -------------------------------------------------------
+       PAYMENT RESPONSE
+    ------------------------------------------------------- */
+
+    const payment =
+      paid > 0
+        ? {
+            amount: paid,
+
+            date:
+              finalPaymentDate,
+
+            invoiceNumber,
+          }
+        : null;
 
     /* -------------------------------------------------------
        RESPONSE
@@ -319,25 +439,15 @@ const addFee = async (req, res) => {
       success: true,
 
       message:
-        "Fee collected successfully",
+        "Fee collected successfully.",
 
-      fee: savedFee,
+      fee:
+        savedFee,
 
-      /* Immediate invoice */
+      payment,
+
       invoice:
-        paid > 0
-          ? {
-              invoiceNumber,
-
-              amount:
-                paid,
-
-              date:
-                getPaymentDate(
-                  paymentDate
-                ),
-            }
-          : null,
+        payment,
     });
   } catch (error) {
     console.error(
@@ -348,7 +458,7 @@ const addFee = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to collect fee",
+        "Failed to collect fee.",
     });
   }
 };
@@ -367,19 +477,13 @@ const getFees = async (req, res) => {
         })
         .toArray();
 
-    /* -------------------------------------------------------
-       Normalize old records
-    ------------------------------------------------------- */
-
     const normalizedFees =
-      fees.map((fee) => {
-        return {
-          ...fee,
+      fees.map((fee) => ({
+        ...fee,
 
-          payments:
-            getPayments(fee),
-        };
-      });
+        payments:
+          getPayments(fee),
+      }));
 
     return res.status(200).json({
       success: true,
@@ -396,7 +500,7 @@ const getFees = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to load fees",
+        "Failed to load fees.",
     });
   }
 };
@@ -410,21 +514,13 @@ const getFeeById = async (req, res) => {
     const { id } =
       req.params;
 
-    /* -------------------------------------------------------
-       ID VALIDATION
-    ------------------------------------------------------- */
-
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message:
-          "Invalid fee ID",
+          "Invalid fee ID.",
       });
     }
-
-    /* -------------------------------------------------------
-       FIND FEE
-    ------------------------------------------------------- */
 
     const fee =
       await getCollection().findOne({
@@ -436,13 +532,9 @@ const getFeeById = async (req, res) => {
       return res.status(404).json({
         success: false,
         message:
-          "Fee record not found",
+          "Fee record not found.",
       });
     }
-
-    /* -------------------------------------------------------
-       NORMALIZE PAYMENT HISTORY
-    ------------------------------------------------------- */
 
     const normalizedFee = {
       ...fee,
@@ -466,7 +558,7 @@ const getFeeById = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to load fee",
+        "Failed to load fee.",
     });
   }
 };
@@ -483,6 +575,8 @@ const addPayment = async (req, res) => {
     const {
       amount,
       paymentDate,
+      paymentMethod,
+      note,
     } = req.body;
 
     /* -------------------------------------------------------
@@ -493,12 +587,12 @@ const addPayment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Invalid fee ID",
+          "Invalid fee ID.",
       });
     }
 
     /* -------------------------------------------------------
-       PAYMENT AMOUNT
+       AMOUNT
     ------------------------------------------------------- */
 
     const paymentAmount =
@@ -508,7 +602,7 @@ const addPayment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Payment amount must be greater than 0",
+          "Payment amount must be greater than 0.",
       });
     }
 
@@ -526,7 +620,7 @@ const addPayment = async (req, res) => {
       return res.status(404).json({
         success: false,
         message:
-          "Fee record not found",
+          "Fee record not found.",
       });
     }
 
@@ -547,14 +641,14 @@ const addPayment = async (req, res) => {
       );
 
     /* -------------------------------------------------------
-       ALREADY PAID
+       FULLY PAID
     ------------------------------------------------------- */
 
     if (currentDue <= 0) {
       return res.status(400).json({
         success: false,
         message:
-          "This fee is already fully paid",
+          "This fee is already fully paid.",
       });
     }
 
@@ -568,8 +662,9 @@ const addPayment = async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
+
         message:
-          `Maximum payable amount is ${currentDue}`,
+          `Maximum payable amount is ${currentDue}.`,
       });
     }
 
@@ -594,35 +689,47 @@ const addPayment = async (req, res) => {
       );
 
     /* -------------------------------------------------------
-       NEW INVOICE
-       Example: #583
+       INVOICE
     ------------------------------------------------------- */
 
     const invoiceNumber =
       generateInvoiceNumber();
+
+    const finalPaymentDate =
+      getPaymentDate(
+        paymentDate
+      );
+
+    /* -------------------------------------------------------
+       NEW PAYMENT
+    ------------------------------------------------------- */
 
     const newPayment = {
       amount:
         paymentAmount,
 
       date:
-        getPaymentDate(
-          paymentDate
-        ),
+        finalPaymentDate,
 
       invoiceNumber,
+
+      paymentMethod:
+        paymentMethod || "Cash",
+
+      note:
+        note || "",
     };
 
     /* -------------------------------------------------------
-       EXISTING PAYMENT HISTORY
+       EXISTING HISTORY
     ------------------------------------------------------- */
 
     let payments =
       getPayments(fee);
 
-    /* -------------------------------------------------------
-       ADD NEW PAYMENT
-    ------------------------------------------------------- */
+    if (!Array.isArray(payments)) {
+      payments = [];
+    }
 
     payments = [
       ...payments,
@@ -630,7 +737,7 @@ const addPayment = async (req, res) => {
     ];
 
     /* -------------------------------------------------------
-       UPDATE DATABASE
+       UPDATE
     ------------------------------------------------------- */
 
     await getCollection().updateOne(
@@ -651,14 +758,10 @@ const addPayment = async (req, res) => {
             newStatus,
 
           paymentDate:
-            getPaymentDate(
-              paymentDate
-            ),
+            finalPaymentDate,
 
-          /* Latest invoice */
           invoiceNumber,
 
-          /* Full history */
           payments,
 
           updatedAt:
@@ -668,7 +771,7 @@ const addPayment = async (req, res) => {
     );
 
     /* -------------------------------------------------------
-       GET UPDATED FEE
+       UPDATED FEE
     ------------------------------------------------------- */
 
     const updatedFee =
@@ -685,10 +788,13 @@ const addPayment = async (req, res) => {
       success: true,
 
       message:
-        "Payment added successfully",
+        "Payment added successfully.",
 
       fee:
         updatedFee,
+
+      payment:
+        newPayment,
 
       invoice: {
         invoiceNumber,
@@ -697,9 +803,7 @@ const addPayment = async (req, res) => {
           paymentAmount,
 
         date:
-          getPaymentDate(
-            paymentDate
-          ),
+          finalPaymentDate,
       },
     });
   } catch (error) {
@@ -711,7 +815,7 @@ const addPayment = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to add payment",
+        "Failed to add payment.",
     });
   }
 };
@@ -725,15 +829,11 @@ const updateFee = async (req, res) => {
     const { id } =
       req.params;
 
-    /* -------------------------------------------------------
-       ID VALIDATION
-    ------------------------------------------------------- */
-
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message:
-          "Invalid fee ID",
+          "Invalid fee ID.",
       });
     }
 
@@ -744,10 +844,6 @@ const updateFee = async (req, res) => {
       examFee,
     } = req.body;
 
-    /* -------------------------------------------------------
-       NUMBER CONVERSION
-    ------------------------------------------------------- */
-
     const monthly =
       Number(monthlyFee) || 0;
 
@@ -757,10 +853,6 @@ const updateFee = async (req, res) => {
     const numericYear =
       Number(year);
 
-    /* -------------------------------------------------------
-       TOTAL
-    ------------------------------------------------------- */
-
     const total =
       monthly + exam;
 
@@ -768,13 +860,9 @@ const updateFee = async (req, res) => {
       return res.status(400).json({
         success: false,
         message:
-          "Total fee must be greater than 0",
+          "Total fee must be greater than 0.",
       });
     }
-
-    /* -------------------------------------------------------
-       FIND EXISTING FEE
-    ------------------------------------------------------- */
 
     const existingFee =
       await getCollection().findOne({
@@ -786,35 +874,23 @@ const updateFee = async (req, res) => {
       return res.status(404).json({
         success: false,
         message:
-          "Fee record not found",
+          "Fee record not found.",
       });
     }
-
-    /* -------------------------------------------------------
-       KEEP EXISTING PAYMENT
-    ------------------------------------------------------- */
 
     const paid =
       Number(
         existingFee.paidAmount
       ) || 0;
 
-    /* -------------------------------------------------------
-       DON'T ALLOW TOTAL < PAID
-    ------------------------------------------------------- */
-
     if (paid > total) {
       return res.status(400).json({
         success: false,
 
         message:
-          `Total fee cannot be less than already paid amount (${paid})`,
+          `Total fee cannot be less than already paid amount (${paid}).`,
       });
     }
-
-    /* -------------------------------------------------------
-       CALCULATE DUE
-    ------------------------------------------------------- */
 
     const due =
       Math.max(
@@ -822,22 +898,11 @@ const updateFee = async (req, res) => {
         0
       );
 
-    /* -------------------------------------------------------
-       STATUS
-    ------------------------------------------------------- */
-
     const paymentStatus =
       getPaymentStatus(
         paid,
         total
       );
-
-    /* -------------------------------------------------------
-       UPDATE DATA
-
-       IMPORTANT:
-       Payment history is NOT destroyed.
-    ------------------------------------------------------- */
 
     const updateData = {
       month,
@@ -865,10 +930,6 @@ const updateFee = async (req, res) => {
         new Date(),
     };
 
-    /* -------------------------------------------------------
-       UPDATE
-    ------------------------------------------------------- */
-
     const result =
       await getCollection().updateOne(
         {
@@ -886,13 +947,9 @@ const updateFee = async (req, res) => {
       return res.status(404).json({
         success: false,
         message:
-          "Fee record not found",
+          "Fee record not found.",
       });
     }
-
-    /* -------------------------------------------------------
-       GET UPDATED FEE
-    ------------------------------------------------------- */
 
     const updatedFee =
       await getCollection().findOne({
@@ -904,16 +961,14 @@ const updateFee = async (req, res) => {
       ...updatedFee,
 
       payments:
-        getPayments(
-          updatedFee
-        ),
+        getPayments(updatedFee),
     };
 
     return res.status(200).json({
       success: true,
 
       message:
-        "Fee updated successfully",
+        "Fee updated successfully.",
 
       fee:
         normalizedFee,
@@ -927,7 +982,7 @@ const updateFee = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to update fee",
+        "Failed to update fee.",
     });
   }
 };
@@ -941,21 +996,13 @@ const deleteFee = async (req, res) => {
     const { id } =
       req.params;
 
-    /* -------------------------------------------------------
-       ID VALIDATION
-    ------------------------------------------------------- */
-
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
         message:
-          "Invalid fee ID",
+          "Invalid fee ID.",
       });
     }
-
-    /* -------------------------------------------------------
-       DELETE
-    ------------------------------------------------------- */
 
     const result =
       await getCollection().deleteOne({
@@ -967,7 +1014,7 @@ const deleteFee = async (req, res) => {
       return res.status(404).json({
         success: false,
         message:
-          "Fee record not found",
+          "Fee record not found.",
       });
     }
 
@@ -975,7 +1022,7 @@ const deleteFee = async (req, res) => {
       success: true,
 
       message:
-        "Fee deleted successfully",
+        "Fee deleted successfully.",
     });
   } catch (error) {
     console.error(
@@ -986,7 +1033,7 @@ const deleteFee = async (req, res) => {
     return res.status(500).json({
       success: false,
       message:
-        "Failed to delete fee",
+        "Failed to delete fee.",
     });
   }
 };

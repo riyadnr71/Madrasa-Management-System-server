@@ -9,22 +9,68 @@ const {
   getExpenses,
   getExpenseById,
   updateExpense,
+  addSalaryPayment,
   deleteExpense,
 } = require("../controllers/expenseController");
 
-// Get all expenses
-router.get("/", authMiddleware, getExpenses);
+// =========================================================
+// GET ALL EXPENSES
+// =========================================================
 
-// Get single expense
-router.get("/:id", authMiddleware, getExpenseById);
+router.get(
+  "/",
+  authMiddleware,
+  getExpenses
+);
 
-// Add expense
-router.post("/", authMiddleware, addExpense);
+// =========================================================
+// GET SINGLE EXPENSE
+// =========================================================
 
-// Update expense
-router.put("/:id", authMiddleware, updateExpense);
+router.get(
+  "/:id",
+  authMiddleware,
+  getExpenseById
+);
 
-// Delete expense
-router.delete("/:id", authMiddleware, deleteExpense);
+// =========================================================
+// ADD EXPENSE
+// =========================================================
+
+router.post(
+  "/",
+  authMiddleware,
+  addExpense
+);
+
+// =========================================================
+// ADD SALARY PAYMENT
+// =========================================================
+
+router.post(
+  "/:id/payment",
+  authMiddleware,
+  addSalaryPayment
+);
+
+// =========================================================
+// UPDATE EXPENSE
+// =========================================================
+
+router.put(
+  "/:id",
+  authMiddleware,
+  updateExpense
+);
+
+// =========================================================
+// DELETE EXPENSE
+// =========================================================
+
+router.delete(
+  "/:id",
+  authMiddleware,
+  deleteExpense
+);
 
 module.exports = router;

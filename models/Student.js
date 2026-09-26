@@ -5,6 +5,7 @@ const StudentModel = {
 
   name: "",
 
+  // This is the Student ID provided by admin
   idCard: "",
 
   roll: "",
@@ -70,6 +71,20 @@ const StudentModel = {
   image: null,
 
   imagePublicId: null,
+
+  /* =========================================================
+     STUDENT LOGIN
+  ========================================================= */
+
+  // Never store the real password here.
+  // The actual password will be converted to a bcrypt hash.
+  passwordHash: null,
+
+  /* =========================================================
+     STUDENT QR CODE
+  ========================================================= */
+
+  qrCode: null,
 
   /* =========================================================
      SYSTEM INFORMATION

@@ -48,6 +48,7 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 
 const seatPlanRoutes = require("./routes/seatPlanRoutes");
+const studentAuthRoutes = require("./routes/studentAuthRoutes");
 
 // =========================================================
 // APP
@@ -112,6 +113,12 @@ app.use(
 app.use(
   "/api/dashboard",
   dashboardRoutes
+);
+
+
+app.use(
+  "/api/student-auth",
+  studentAuthRoutes
 );
 
 // =========================================================
