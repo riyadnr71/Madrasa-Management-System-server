@@ -1,6 +1,11 @@
-const jwt = require("jsonwebtoken");
+// middleware/teacherAuthMiddleware.js
 
-const teacherAuthMiddleware = (
+const jwt = require("jsonwebtoken");
+const { ObjectId } = require("mongodb");
+
+const { getDB } = require("../config/db");
+
+const teacherAuthMiddleware = async (
   req,
   res,
   next
@@ -15,55 +20,74 @@ const teacherAuthMiddleware = (
     ) {
       return res.status(401).json({
         success: false,
-        message:
-          "Teacher authentication required.",
+        message: "Teacher authentication required.",
       });
     }
 
     const token =
       authHeader.split(" ")[1];
 
-    const JWT_SECRET =
-      process.env.JWT_SECRET ||
-      process.env.JWT_SECRET_KEY;
-
-    if (!JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "Server authentication configuration error.",
-      });
-    }
-
     const decoded = jwt.verify(
       token,
-      JWT_SECRET
+      process.env.JWT_SECRET
     );
 
     if (decoded.type !== "teacher") {
       return res.status(403).json({
         success: false,
-        message:
-          "Invalid teacher token.",
+        message: "Teacher access only.",
+      });
+    }
+
+    if (
+      !decoded.teacherId ||
+      !ObjectId.isValid(decoded.teacherId)
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid teacher token.",
+      });
+    }
+
+    const db = getDB();
+
+    const teacher =
+      await db.collection("teachers").findOne({
+        _id: new ObjectId(decoded.teacherId),
+      });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher account not found.",
+      });
+    }
+
+    if (
+      teacher.status &&
+      String(teacher.status).toLowerCase() !== "active"
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Teacher account is inactive.",
       });
     }
 
     req.teacher = decoded;
+    req.teacherData = teacher;
 
     next();
   } catch (error) {
     console.error(
-      "Teacher Auth Middleware Error:",
+      "teacherAuthMiddleware error:",
       error
     );
 
     return res.status(401).json({
       success: false,
-      message:
-        "Teacher session expired or invalid.",
+      message: "Invalid or expired teacher token.",
     });
   }
 };
 
-module.exports =
-  teacherAuthMiddleware;
+module.exports = teacherAuthMiddleware;

@@ -1,17 +1,32 @@
-const { ObjectId } = require("mongodb");
+// controllers/teacherAuthController.js
+
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { ObjectId } = require("mongodb");
 
 const { getDB } = require("../config/db");
 
-/* =========================================================
-   TEACHER LOGIN
-========================================================= */
+const {
+  normalizePermissions,
+  normalizeAcademicAccess,
+  normalizeAttendanceAccess,
+} = require("../utils/teacherPermissions");
 
-const teacherLogin = async (
-  req,
-  res
-) => {
+const getSafeTeacher = (teacher) => {
+  if (!teacher) return null;
+
+  const {
+    passwordHash,
+    ...safeTeacher
+  } = teacher;
+
+  return safeTeacher;
+};
+
+/**
+ * TEACHER LOGIN
+ */
+const teacherLogin = async (req, res) => {
   try {
     const {
       teacherId,
@@ -30,30 +45,30 @@ const teacherLogin = async (
 
     const teacher =
       await db.collection("teachers").findOne({
-        teacherId: String(
-          teacherId
-        ).trim(),
+        teacherId: String(teacherId).trim(),
       });
 
     if (!teacher) {
       return res.status(401).json({
         success: false,
         message:
-          "Invalid Teacher ID or password.",
+          "Invalid teacher ID or password.",
       });
     }
 
-    if (!teacher.passwordHash) {
-      return res.status(401).json({
+    if (
+      teacher.status &&
+      String(teacher.status).toLowerCase() !== "active"
+    ) {
+      return res.status(403).json({
         success: false,
-        message:
-          "Teacher password is not configured. Please contact the administration.",
+        message: "Teacher account is inactive.",
       });
     }
 
     const passwordMatched =
       await bcrypt.compare(
-        String(password),
+        password,
         teacher.passwordHash
       );
 
@@ -61,32 +76,7 @@ const teacherLogin = async (
       return res.status(401).json({
         success: false,
         message:
-          "Invalid Teacher ID or password.",
-      });
-    }
-
-    if (
-      teacher.status &&
-      String(
-        teacher.status
-      ).toLowerCase() !== "active"
-    ) {
-      return res.status(403).json({
-        success: false,
-        message:
-          "This teacher account is currently inactive.",
-      });
-    }
-
-    const JWT_SECRET =
-      process.env.JWT_SECRET ||
-      process.env.JWT_SECRET_KEY;
-
-    if (!JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message:
-          "Server authentication configuration error.",
+          "Invalid teacher ID or password.",
       });
     }
 
@@ -100,117 +90,119 @@ const teacherLogin = async (
 
         type: "teacher",
       },
-      JWT_SECRET,
+
+      process.env.JWT_SECRET,
+
       {
         expiresIn: "7d",
       }
     );
 
-    const {
-      passwordHash,
-      ...teacherData
-    } = teacher;
-
     return res.status(200).json({
       success: true,
-      message:
-        "Teacher login successful.",
+      message: "Teacher login successful.",
 
       token,
 
-      teacher: {
-        ...teacherData,
-        _id: teacher._id,
-      },
+      teacher: getSafeTeacher({
+        ...teacher,
+
+        permissions:
+          normalizePermissions(
+            teacher.permissions
+          ),
+
+        academicAccess:
+          normalizeAcademicAccess(
+            teacher.academicAccess
+          ),
+
+        attendanceAccess:
+          normalizeAttendanceAccess(
+            teacher.attendanceAccess
+          ),
+      }),
     });
   } catch (error) {
     console.error(
-      "Teacher Login Error:",
+      "teacherLogin error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message:
-        "Teacher login failed.",
+      message: "Teacher login failed.",
     });
   }
 };
 
-/* =========================================================
-   GET CURRENT TEACHER
-========================================================= */
-
+/**
+ * GET LOGGED-IN TEACHER
+ */
 const getTeacherMe = async (
   req,
   res
 ) => {
   try {
-    const teacherMongoId =
+    const teacherId =
       req.teacher?.teacherId;
 
-    if (!teacherMongoId) {
-      return res.status(401).json({
-        success: false,
-        message:
-          "Teacher authentication required.",
-      });
-    }
-
     if (
-      !ObjectId.isValid(
-        teacherMongoId
-      )
+      !teacherId ||
+      !ObjectId.isValid(teacherId)
     ) {
       return res.status(401).json({
         success: false,
-        message:
-          "Invalid teacher authentication.",
+        message: "Invalid teacher authentication.",
       });
     }
 
     const db = getDB();
 
     const teacher =
-      await db
-        .collection("teachers")
-        .findOne({
-          _id: new ObjectId(
-            teacherMongoId
-          ),
-        });
+      await db.collection("teachers").findOne({
+        _id: new ObjectId(teacherId),
+      });
 
     if (!teacher) {
       return res.status(404).json({
         success: false,
-        message:
-          "Teacher not found.",
+        message: "Teacher not found.",
       });
     }
-
-    const {
-      passwordHash,
-      ...teacherData
-    } = teacher;
 
     return res.status(200).json({
       success: true,
 
-      teacher: {
-        ...teacherData,
-        _id: teacher._id,
-      },
+      teacher: getSafeTeacher({
+        ...teacher,
+
+        permissions:
+          normalizePermissions(
+            teacher.permissions
+          ),
+
+        academicAccess:
+          normalizeAcademicAccess(
+            teacher.academicAccess
+          ),
+
+        attendanceAccess:
+          normalizeAttendanceAccess(
+            teacher.attendanceAccess
+          ),
+      }),
     });
   } catch (error) {
     console.error(
-      "Get Teacher Me Error:",
+      "getTeacherMe error:",
       error
     );
 
     return res.status(500).json({
       success: false,
       message:
-        "Failed to load teacher profile.",
+        "Failed to load teacher information.",
     });
   }
 };

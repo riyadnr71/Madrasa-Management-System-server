@@ -1,12 +1,6 @@
+// routes/teacherRoutes.js
+
 const express = require("express");
-
-const router = express.Router();
-
-const authMiddleware =
-  require("../middleware/authMiddleware");
-
-const upload =
-  require("../middleware/teacherUpload");
 
 const {
   addTeacher,
@@ -15,13 +9,11 @@ const {
   updateTeacher,
   deleteTeacher,
   resetTeacherPassword,
-  updateTeacherPermissions,
-  updateTeacherAssignments,
 } = require("../controllers/teacherController");
 
-/* =========================================================
-   ADMIN TEACHER CRUD
-========================================================= */
+const authMiddleware = require("../middleware/authMiddleware");
+
+const router = express.Router();
 
 router.get(
   "/",
@@ -38,14 +30,12 @@ router.get(
 router.post(
   "/",
   authMiddleware,
-  upload.single("image"),
   addTeacher
 );
 
 router.put(
   "/:id",
   authMiddleware,
-  upload.single("image"),
   updateTeacher
 );
 
@@ -55,34 +45,10 @@ router.delete(
   deleteTeacher
 );
 
-/* =========================================================
-   ADMIN TEACHER LOGIN CREDENTIALS
-========================================================= */
-
 router.patch(
   "/:id/reset-password",
   authMiddleware,
   resetTeacherPassword
-);
-
-/* =========================================================
-   ADMIN TEACHER PERMISSIONS
-========================================================= */
-
-router.patch(
-  "/:id/permissions",
-  authMiddleware,
-  updateTeacherPermissions
-);
-
-/* =========================================================
-   ADMIN TEACHER CLASS + SUBJECT ASSIGNMENTS
-========================================================= */
-
-router.patch(
-  "/:id/assignments",
-  authMiddleware,
-  updateTeacherAssignments
 );
 
 module.exports = router;

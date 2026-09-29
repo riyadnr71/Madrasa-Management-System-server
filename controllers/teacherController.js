@@ -1,62 +1,60 @@
-const { ObjectId } = require("mongodb");
+// controllers/teacherController.js
+
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
-const { Readable } = require("stream");
+const { ObjectId } = require("mongodb");
 
 const { getDB } = require("../config/db");
-const cloudinary = require("../config/cloudinary");
 
-/* =========================================================
-   CLOUDINARY UPLOAD
-========================================================= */
-
-const uploadToCloudinary = (fileBuffer) => {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: "madrasa/teachers",
-        resource_type: "image",
-      },
-      (error, result) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve(result);
-        }
-      }
-    );
-
-    Readable.from(fileBuffer).pipe(stream);
-  });
-};
+const {
+  ALLOWED_BRANCHES,
+  normalizePermissions,
+  normalizeAcademicAccess,
+  normalizeAttendanceAccess,
+} = require("../utils/teacherPermissions");
 
 /* =========================================================
    GENERATE TEACHER ID
 ========================================================= */
 
-const generateTeacherId = async (teachersCollection) => {
-  const lastTeacher = await teachersCollection
-    .find({})
-    .sort({ teacherId: -1 })
-    .limit(1)
+const generateTeacherId = async (db) => {
+  const teachers = await db
+    .collection("teachers")
+    .find(
+      {
+        teacherId: {
+          $exists: true,
+        },
+      },
+      {
+        projection: {
+          teacherId: 1,
+        },
+      }
+    )
     .toArray();
 
-  if (!lastTeacher.length) {
-    return "T-0001";
+  let maxNumber = 0;
+
+  for (const teacher of teachers) {
+    const match = String(
+      teacher.teacherId || ""
+    ).match(/T-(\d+)/i);
+
+    if (match) {
+      const number = parseInt(match[1], 10);
+
+      if (!Number.isNaN(number)) {
+        maxNumber = Math.max(
+          maxNumber,
+          number
+        );
+      }
+    }
   }
 
-  const lastId = lastTeacher[0].teacherId || "T-0000";
-
-  const number = parseInt(
-    lastId.replace("T-", ""),
-    10
-  );
-
-  const nextNumber = Number.isNaN(number)
-    ? 1
-    : number + 1;
-
-  return `T-${String(nextNumber).padStart(4, "0")}`;
+  return `T-${String(
+    maxNumber + 1
+  ).padStart(4, "0")}`;
 };
 
 /* =========================================================
@@ -64,100 +62,27 @@ const generateTeacherId = async (teachersCollection) => {
 ========================================================= */
 
 const generateTeacherPassword = () => {
-  return `TR${crypto.randomInt(100000, 1000000)}`;
+  const randomNumber = Math.floor(
+    100000 +
+      Math.random() * 900000
+  );
+
+  return String(randomNumber);
 };
 
 /* =========================================================
-   DEFAULT PERMISSIONS
+   SAFE TEACHER
 ========================================================= */
 
-const getDefaultPermissions = () => ({
-  students: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
+const getSafeTeacher = (teacher) => {
+  if (!teacher) return null;
 
-  results: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
+  const {
+    passwordHash,
+    ...safeTeacher
+  } = teacher;
 
-  homework: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-
-  notices: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-
-  fees: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-});
-
-/* =========================================================
-   NORMALIZE PERMISSIONS
-========================================================= */
-
-const normalizePermissions = (permissions) => {
-  const defaults = getDefaultPermissions();
-
-  if (!permissions || typeof permissions !== "object") {
-    return defaults;
-  }
-
-  Object.keys(defaults).forEach((module) => {
-    if (
-      permissions[module] &&
-      typeof permissions[module] === "object"
-    ) {
-      Object.keys(defaults[module]).forEach((action) => {
-        defaults[module][action] =
-          permissions[module][action] === true;
-      });
-    }
-  });
-
-  return defaults;
-};
-
-/* =========================================================
-   NORMALIZE ASSIGNMENTS
-========================================================= */
-
-const normalizeAssignments = (assignments) => {
-  if (!Array.isArray(assignments)) {
-    return [];
-  }
-
-  return assignments
-    .map((assignment) => ({
-      className: String(
-        assignment?.className || ""
-      ).trim(),
-
-      subjectName: String(
-        assignment?.subjectName || ""
-      ).trim(),
-    }))
-    .filter(
-      (assignment) =>
-        assignment.className &&
-        assignment.subjectName
-    );
+  return safeTeacher;
 };
 
 /* =========================================================
@@ -168,165 +93,304 @@ const addTeacher = async (req, res) => {
   try {
     const {
       name,
-      subject,
-      designation,
-      qualification,
-      salary,
-      mobile,
-      joiningDate,
-      address,
-      status,
-      note,
-      permissions,
-      assignments,
-    } = req.body;
+      mobile = "",
+      email = "",
+      branch = "Main Branch",
+      subject = "",
+      designation = "",
+      qualification = "",
+      salary = "",
+      joiningDate = "",
+      address = "",
+      status = "Active",
+      note = "",
 
-    if (!name?.trim()) {
+      /*
+       * Optional:
+       * Normally AddTeacher.jsx does not send these.
+       * They are kept here for future compatibility.
+       */
+      permissions = {},
+      academicAccess = [],
+      attendanceAccess = [],
+    } = req.body || {};
+
+    /* =====================================================
+       VALIDATION
+    ===================================================== */
+
+    if (!name || !String(name).trim()) {
       return res.status(400).json({
         success: false,
-        message: "Teacher name is required.",
+        message:
+          "Teacher name is required.",
       });
     }
 
-    if (!subject?.trim()) {
+    if (!ALLOWED_BRANCHES.includes(branch)) {
       return res.status(400).json({
         success: false,
-        message: "Subject is required.",
-      });
-    }
-
-    if (!designation?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Designation is required.",
+        message:
+          "Invalid branch.",
       });
     }
 
     const db = getDB();
-    const teachersCollection =
-      db.collection("teachers");
 
-    const teacherId =
-      await generateTeacherId(
-        teachersCollection
-      );
+    /* =====================================================
+       MOBILE DUPLICATE CHECK
+    ===================================================== */
 
-    /* ===============================
-       IMAGE
-    =============================== */
+    const cleanMobile = String(
+      mobile || ""
+    ).trim();
 
-    let image = null;
-    let imagePublicId = null;
+    if (cleanMobile) {
+      const existingMobile =
+        await db
+          .collection("teachers")
+          .findOne({
+            mobile: cleanMobile,
+          });
 
-    if (req.file) {
-      const uploaded =
-        await uploadToCloudinary(
-          req.file.buffer
-        );
-
-      image = uploaded.secure_url;
-      imagePublicId = uploaded.public_id;
+      if (existingMobile) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This mobile number is already registered.",
+        });
+      }
     }
 
-    /* ===============================
-       PASSWORD
-    =============================== */
+    /* =====================================================
+       EMAIL DUPLICATE CHECK
+    ===================================================== */
 
-    const generatedPassword =
+    const cleanEmail = String(
+      email || ""
+    ).trim();
+
+    if (cleanEmail) {
+      const existingEmail =
+        await db
+          .collection("teachers")
+          .findOne({
+            email: cleanEmail,
+          });
+
+      if (existingEmail) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This email is already registered.",
+        });
+      }
+    }
+
+    /* =====================================================
+       GENERATE TEACHER ID
+    ===================================================== */
+
+    const teacherId =
+      await generateTeacherId(db);
+
+    /* =====================================================
+       GENERATE PASSWORD
+    ===================================================== */
+
+    const plainPassword =
       generateTeacherPassword();
 
     const passwordHash =
       await bcrypt.hash(
-        generatedPassword,
+        plainPassword,
         10
       );
 
-    /* ===============================
-       DATA
-    =============================== */
+    /* =====================================================
+       NORMALIZE STATUS
+    ===================================================== */
+
+    const normalizedStatus =
+      String(status).toLowerCase() ===
+      "inactive"
+        ? "inactive"
+        : "active";
+
+    /* =====================================================
+       NORMALIZE SALARY
+    ===================================================== */
+
+    let normalizedSalary = "";
+
+    if (
+      salary !== undefined &&
+      salary !== null &&
+      String(salary).trim() !== ""
+    ) {
+      const numericSalary = Number(
+        salary
+      );
+
+      normalizedSalary =
+        Number.isNaN(numericSalary)
+          ? ""
+          : numericSalary;
+    }
+
+    /* =====================================================
+       CREATE TEACHER
+    ===================================================== */
 
     const now = new Date();
 
     const teacher = {
       teacherId,
 
-      name: name.trim(),
-      subject: subject.trim(),
-      designation: designation.trim(),
-      qualification:
-        qualification?.trim() || "",
+      name: String(name).trim(),
 
-      salary: Number(salary || 0),
-      mobile: mobile?.trim() || "",
+      mobile: cleanMobile,
 
-      joiningDate:
-        joiningDate || "",
+      email: cleanEmail,
 
-      address:
-        address?.trim() || "",
+      branch,
+
+      subject: String(
+        subject || ""
+      ).trim(),
+
+      designation: String(
+        designation || ""
+      ).trim(),
+
+      qualification: String(
+        qualification || ""
+      ).trim(),
+
+      salary: normalizedSalary,
+
+      joiningDate: String(
+        joiningDate || ""
+      ).trim(),
+
+      address: String(
+        address || ""
+      ).trim(),
 
       status:
-        status || "Active",
+        normalizedStatus,
 
-      note:
-        note?.trim() || "",
+      note: String(
+        note || ""
+      ).trim(),
 
-      image,
-      imagePublicId,
+      /*
+       * Image information
+       *
+       * If your upload middleware/controller
+       * adds image later, these fields remain
+       * compatible.
+       */
+      image:
+        req.body?.image || "",
 
-      passwordHash,
+      imagePublicId:
+        req.body?.imagePublicId || "",
+
+      /* ===================================================
+         NEW TEACHER ACCESS SYSTEM
+      =================================================== */
 
       permissions:
         normalizePermissions(
           permissions
         ),
 
-      assignments:
-        normalizeAssignments(
-          assignments
+      academicAccess:
+        normalizeAcademicAccess(
+          academicAccess
         ),
 
+      attendanceAccess:
+        normalizeAttendanceAccess(
+          attendanceAccess
+        ),
+
+      passwordHash,
+
       createdAt: now,
+
       updatedAt: now,
     };
 
+    /* =====================================================
+       INSERT
+    ===================================================== */
+
     const result =
-      await teachersCollection.insertOne(
-        teacher
-      );
+      await db
+        .collection("teachers")
+        .insertOne(
+          teacher
+        );
 
-    const savedTeacher = {
-      ...teacher,
-      _id: result.insertedId,
-    };
+    if (!result.insertedId) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "Teacher could not be created.",
+      });
+    }
 
-    /* Do not send passwordHash */
+    /* =====================================================
+       GET CREATED TEACHER
+    ===================================================== */
 
-    const {
-      passwordHash: hiddenPasswordHash,
-      ...teacherWithoutHash
-    } = savedTeacher;
+    const createdTeacher =
+      await db
+        .collection("teachers")
+        .findOne({
+          _id: result.insertedId,
+        });
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
 
     return res.status(201).json({
       success: true,
-      message: "Teacher added successfully.",
 
-      teacher: teacherWithoutHash,
+      message:
+        "Teacher created successfully.",
 
+      teacher:
+        getSafeTeacher(
+          createdTeacher
+        ),
+
+      /*
+       * Login credentials are returned
+       * ONLY at creation time.
+       */
       login: {
-        teacherId,
-        password: generatedPassword,
+        teacherId:
+          teacher.teacherId,
+
+        password:
+          plainPassword,
       },
     });
   } catch (error) {
     console.error(
-      "Add Teacher Error:",
+      "❌ addTeacher error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to add teacher.",
+      message:
+        error?.message ||
+        "Failed to create teacher.",
     });
   }
 };
@@ -335,7 +399,10 @@ const addTeacher = async (req, res) => {
    GET ALL TEACHERS
 ========================================================= */
 
-const getTeachers = async (req, res) => {
+const getTeachers = async (
+  req,
+  res
+) => {
   try {
     const db = getDB();
 
@@ -343,84 +410,88 @@ const getTeachers = async (req, res) => {
       await db
         .collection("teachers")
         .find({})
-        .sort({ createdAt: -1 })
+        .sort({
+          createdAt: -1,
+        })
         .toArray();
 
     const safeTeachers =
-      teachers.map((teacher) => {
-        const {
-          passwordHash,
-          ...safeTeacher
-        } = teacher;
-
-        return safeTeacher;
-      });
+      teachers.map(
+        getSafeTeacher
+      );
 
     return res.status(200).json({
       success: true,
-      count: safeTeachers.length,
       teachers: safeTeachers,
     });
   } catch (error) {
     console.error(
-      "Get Teachers Error:",
+      "❌ getTeachers error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load teachers.",
+      message:
+        "Failed to load teachers.",
     });
   }
 };
 
 /* =========================================================
-   GET TEACHER BY ID
+   GET SINGLE TEACHER
 ========================================================= */
 
-const getTeacherById = async (req, res) => {
+const getTeacherById = async (
+  req,
+  res
+) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid teacher ID.",
+        message:
+          "Invalid teacher ID.",
       });
     }
 
     const db = getDB();
 
     const teacher =
-      await db.collection("teachers").findOne({
-        _id: new ObjectId(id),
-      });
+      await db
+        .collection("teachers")
+        .findOne({
+          _id: new ObjectId(id),
+        });
 
     if (!teacher) {
       return res.status(404).json({
         success: false,
-        message: "Teacher not found.",
+        message:
+          "Teacher not found.",
       });
     }
 
-    const {
-      passwordHash,
-      ...safeTeacher
-    } = teacher;
-
     return res.status(200).json({
       success: true,
-      teacher: safeTeacher,
+      teacher:
+        getSafeTeacher(
+          teacher
+        ),
     });
   } catch (error) {
     console.error(
-      "Get Teacher Error:",
+      "❌ getTeacherById error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to load teacher.",
+      message:
+        "Failed to load teacher.",
     });
   }
 };
@@ -429,193 +500,384 @@ const getTeacherById = async (req, res) => {
    UPDATE TEACHER
 ========================================================= */
 
-const updateTeacher = async (req, res) => {
+const updateTeacher = async (
+  req,
+  res
+) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid teacher ID.",
-      });
-    }
-
-    const db = getDB();
-
-    const teachersCollection =
-      db.collection("teachers");
-
-    const existingTeacher =
-      await teachersCollection.findOne({
-        _id: new ObjectId(id),
-      });
-
-    if (!existingTeacher) {
-      return res.status(404).json({
-        success: false,
-        message: "Teacher not found.",
+        message:
+          "Invalid teacher ID.",
       });
     }
 
     const {
       name,
+      mobile,
+      email,
+      branch,
       subject,
       designation,
       qualification,
       salary,
-      mobile,
       joiningDate,
       address,
       status,
       note,
+
       permissions,
-      assignments,
-    } = req.body;
-
-    if (!name?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Teacher name is required.",
-      });
-    }
-
-    if (!subject?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Subject is required.",
-      });
-    }
-
-    if (!designation?.trim()) {
-      return res.status(400).json({
-        success: false,
-        message: "Designation is required.",
-      });
-    }
-
-    /* ===============================
-       IMAGE
-    =============================== */
-
-    let image =
-      existingTeacher.image || null;
-
-    let imagePublicId =
-      existingTeacher.imagePublicId || null;
-
-    if (req.file) {
-      const uploaded =
-        await uploadToCloudinary(
-          req.file.buffer
-        );
-
-      image = uploaded.secure_url;
-      imagePublicId =
-        uploaded.public_id;
-
-      if (
-        existingTeacher.imagePublicId
-      ) {
-        try {
-          await cloudinary.uploader.destroy(
-            existingTeacher.imagePublicId
-          );
-        } catch (cloudinaryError) {
-          console.error(
-            "Old teacher image delete error:",
-            cloudinaryError
-          );
-        }
-      }
-    }
-
-    /* ===============================
-       UPDATE DATA
-    =============================== */
-
-    const updateData = {
-      name: name.trim(),
-      subject: subject.trim(),
-      designation: designation.trim(),
-
-      qualification:
-        qualification?.trim() || "",
-
-      salary: Number(salary || 0),
-
-      mobile:
-        mobile?.trim() || "",
-
-      joiningDate:
-        joiningDate || "",
-
-      address:
-        address?.trim() || "",
-
-      status:
-        status || "Active",
-
-      note:
-        note?.trim() || "",
+      academicAccess,
+      attendanceAccess,
 
       image,
       imagePublicId,
+    } = req.body || {};
 
-      permissions:
-        permissions !== undefined
-          ? normalizePermissions(
-              permissions
-            )
-          : normalizePermissions(
-              existingTeacher.permissions
-            ),
+    const db = getDB();
 
-      assignments:
-        assignments !== undefined
-          ? normalizeAssignments(
-              assignments
-            )
-          : normalizeAssignments(
-              existingTeacher.assignments
-            ),
+    const teacher =
+      await db
+        .collection("teachers")
+        .findOne({
+          _id: new ObjectId(id),
+        });
 
-      updatedAt: new Date(),
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Teacher not found.",
+      });
+    }
+
+    const updateData = {
+      updatedAt:
+        new Date(),
     };
 
-    await teachersCollection.updateOne(
-      {
-        _id: new ObjectId(id),
-      },
-      {
-        $set: updateData,
+    /* =====================================================
+       BASIC INFORMATION
+    ===================================================== */
+
+    if (name !== undefined) {
+      const cleanName =
+        String(name).trim();
+
+      if (!cleanName) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Teacher name cannot be empty.",
+        });
       }
-    );
+
+      updateData.name =
+        cleanName;
+    }
+
+    /* =====================================================
+       MOBILE
+    ===================================================== */
+
+    if (mobile !== undefined) {
+      const cleanMobile =
+        String(mobile).trim();
+
+      if (
+        cleanMobile &&
+        cleanMobile !==
+          teacher.mobile
+      ) {
+        const duplicate =
+          await db
+            .collection("teachers")
+            .findOne({
+              mobile:
+                cleanMobile,
+              _id: {
+                $ne:
+                  new ObjectId(id),
+              },
+            });
+
+        if (duplicate) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "This mobile number is already registered.",
+          });
+        }
+      }
+
+      updateData.mobile =
+        cleanMobile;
+    }
+
+    /* =====================================================
+       EMAIL
+    ===================================================== */
+
+    if (email !== undefined) {
+      const cleanEmail =
+        String(email).trim();
+
+      if (
+        cleanEmail &&
+        cleanEmail !==
+          teacher.email
+      ) {
+        const duplicate =
+          await db
+            .collection("teachers")
+            .findOne({
+              email:
+                cleanEmail,
+              _id: {
+                $ne:
+                  new ObjectId(id),
+              },
+            });
+
+        if (duplicate) {
+          return res.status(409).json({
+            success: false,
+            message:
+              "This email is already registered.",
+          });
+        }
+      }
+
+      updateData.email =
+        cleanEmail;
+    }
+
+    /* =====================================================
+       BRANCH
+    ===================================================== */
+
+    if (branch !== undefined) {
+      if (
+        !ALLOWED_BRANCHES.includes(
+          branch
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid branch.",
+        });
+      }
+
+      updateData.branch =
+        branch;
+    }
+
+    /* =====================================================
+       OTHER FIELDS
+    ===================================================== */
+
+    if (subject !== undefined) {
+      updateData.subject =
+        String(
+          subject || ""
+        ).trim();
+    }
+
+    if (
+      designation !==
+      undefined
+    ) {
+      updateData.designation =
+        String(
+          designation || ""
+        ).trim();
+    }
+
+    if (
+      qualification !==
+      undefined
+    ) {
+      updateData.qualification =
+        String(
+          qualification || ""
+        ).trim();
+    }
+
+    if (
+      salary !== undefined
+    ) {
+      if (
+        String(
+          salary
+        ).trim() === ""
+      ) {
+        updateData.salary =
+          "";
+      } else {
+        const numericSalary =
+          Number(salary);
+
+        updateData.salary =
+          Number.isNaN(
+            numericSalary
+          )
+            ? ""
+            : numericSalary;
+      }
+    }
+
+    if (
+      joiningDate !==
+      undefined
+    ) {
+      updateData.joiningDate =
+        String(
+          joiningDate || ""
+        ).trim();
+    }
+
+    if (
+      address !== undefined
+    ) {
+      updateData.address =
+        String(
+          address || ""
+        ).trim();
+    }
+
+    if (
+      note !== undefined
+    ) {
+      updateData.note =
+        String(
+          note || ""
+        ).trim();
+    }
+
+    /* =====================================================
+       STATUS
+    ===================================================== */
+
+    if (status !== undefined) {
+      updateData.status =
+        String(status)
+          .toLowerCase() ===
+        "inactive"
+          ? "inactive"
+          : "active";
+    }
+
+    /* =====================================================
+       IMAGE
+    ===================================================== */
+
+    if (image !== undefined) {
+      updateData.image =
+        image;
+    }
+
+    if (
+      imagePublicId !==
+      undefined
+    ) {
+      updateData.imagePublicId =
+        imagePublicId;
+    }
+
+    /* =====================================================
+       ACCESS SYSTEM
+    ===================================================== */
+
+    if (
+      permissions !==
+      undefined
+    ) {
+      updateData.permissions =
+        normalizePermissions(
+          permissions
+        );
+    }
+
+    if (
+      academicAccess !==
+      undefined
+    ) {
+      updateData.academicAccess =
+        normalizeAcademicAccess(
+          academicAccess
+        );
+    }
+
+    if (
+      attendanceAccess !==
+      undefined
+    ) {
+      updateData.attendanceAccess =
+        normalizeAttendanceAccess(
+          attendanceAccess
+        );
+    }
+
+    /* =====================================================
+       UPDATE
+    ===================================================== */
+
+    const result =
+      await db
+        .collection("teachers")
+        .updateOne(
+          {
+            _id:
+              new ObjectId(id),
+          },
+          {
+            $set:
+              updateData,
+          }
+        );
+
+    if (!result.matchedCount) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Teacher not found.",
+      });
+    }
 
     const updatedTeacher =
-      await teachersCollection.findOne({
-        _id: new ObjectId(id),
-      });
-
-    const {
-      passwordHash,
-      ...safeTeacher
-    } = updatedTeacher;
+      await db
+        .collection("teachers")
+        .findOne({
+          _id:
+            new ObjectId(id),
+        });
 
     return res.status(200).json({
       success: true,
       message:
         "Teacher updated successfully.",
-      teacher: safeTeacher,
+
+      teacher:
+        getSafeTeacher(
+          updatedTeacher
+        ),
     });
   } catch (error) {
     console.error(
-      "Update Teacher Error:",
+      "❌ updateTeacher error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to update teacher.",
+      message:
+        error?.message ||
+        "Failed to update teacher.",
     });
   }
 };
@@ -624,51 +886,38 @@ const updateTeacher = async (req, res) => {
    DELETE TEACHER
 ========================================================= */
 
-const deleteTeacher = async (req, res) => {
+const deleteTeacher = async (
+  req,
+  res
+) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid teacher ID.",
+        message:
+          "Invalid teacher ID.",
       });
     }
 
     const db = getDB();
 
-    const teachersCollection =
-      db.collection("teachers");
+    const result =
+      await db
+        .collection("teachers")
+        .deleteOne({
+          _id:
+            new ObjectId(id),
+        });
 
-    const teacher =
-      await teachersCollection.findOne({
-        _id: new ObjectId(id),
-      });
-
-    if (!teacher) {
+    if (!result.deletedCount) {
       return res.status(404).json({
         success: false,
-        message: "Teacher not found.",
+        message:
+          "Teacher not found.",
       });
-    }
-
-    await teachersCollection.deleteOne({
-      _id: new ObjectId(id),
-    });
-
-    /* Delete Cloudinary image */
-
-    if (teacher.imagePublicId) {
-      try {
-        await cloudinary.uploader.destroy(
-          teacher.imagePublicId
-        );
-      } catch (cloudinaryError) {
-        console.error(
-          "Teacher image delete error:",
-          cloudinaryError
-        );
-      }
     }
 
     return res.status(200).json({
@@ -678,13 +927,14 @@ const deleteTeacher = async (req, res) => {
     });
   } catch (error) {
     console.error(
-      "Delete Teacher Error:",
+      "❌ deleteTeacher error:",
       error
     );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete teacher.",
+      message:
+        "Failed to delete teacher.",
     });
   }
 };
@@ -698,66 +948,81 @@ const resetTeacherPassword = async (
   res
 ) => {
   try {
-    const { id } = req.params;
+    const { id } =
+      req.params;
+
+    const {
+      password,
+    } = req.body || {};
 
     if (!ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
-        message: "Invalid teacher ID.",
+        message:
+          "Invalid teacher ID.",
+      });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New password is required.",
+      });
+    }
+
+    if (
+      String(password).length <
+      4
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Password must be at least 4 characters.",
       });
     }
 
     const db = getDB();
 
-    const teachersCollection =
-      db.collection("teachers");
-
-    const teacher =
-      await teachersCollection.findOne({
-        _id: new ObjectId(id),
-      });
-
-    if (!teacher) {
-      return res.status(404).json({
-        success: false,
-        message: "Teacher not found.",
-      });
-    }
-
-    const generatedPassword =
-      generateTeacherPassword();
-
     const passwordHash =
       await bcrypt.hash(
-        generatedPassword,
+        String(password),
         10
       );
 
-    await teachersCollection.updateOne(
-      {
-        _id: new ObjectId(id),
-      },
-      {
-        $set: {
-          passwordHash,
-          updatedAt: new Date(),
-        },
-      }
-    );
+    const result =
+      await db
+        .collection("teachers")
+        .updateOne(
+          {
+            _id:
+              new ObjectId(id),
+          },
+          {
+            $set: {
+              passwordHash,
+              updatedAt:
+                new Date(),
+            },
+          }
+        );
+
+    if (!result.matchedCount) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Teacher not found.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
       message:
         "Teacher password reset successfully.",
-
-      login: {
-        teacherId: teacher.teacherId,
-        password: generatedPassword,
-      },
     });
   } catch (error) {
     console.error(
-      "Reset Teacher Password Error:",
+      "❌ resetTeacherPassword error:",
       error
     );
 
@@ -765,176 +1030,6 @@ const resetTeacherPassword = async (
       success: false,
       message:
         "Failed to reset teacher password.",
-    });
-  }
-};
-
-/* =========================================================
-   UPDATE PERMISSIONS
-========================================================= */
-
-const updateTeacherPermissions = async (
-  req,
-  res
-) => {
-  try {
-    const { id } = req.params;
-    const { permissions } = req.body;
-
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid teacher ID.",
-      });
-    }
-
-    if (
-      !permissions ||
-      typeof permissions !== "object"
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Valid permissions are required.",
-      });
-    }
-
-    const db = getDB();
-
-    const result =
-      await db.collection("teachers").updateOne(
-        {
-          _id: new ObjectId(id),
-        },
-        {
-          $set: {
-            permissions:
-              normalizePermissions(
-                permissions
-              ),
-            updatedAt: new Date(),
-          },
-        }
-      );
-
-    if (!result.matchedCount) {
-      return res.status(404).json({
-        success: false,
-        message: "Teacher not found.",
-      });
-    }
-
-    const teacher =
-      await db.collection("teachers").findOne({
-        _id: new ObjectId(id),
-      });
-
-    const {
-      passwordHash,
-      ...safeTeacher
-    } = teacher;
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Teacher permissions updated successfully.",
-      teacher: safeTeacher,
-    });
-  } catch (error) {
-    console.error(
-      "Update Teacher Permissions Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Failed to update teacher permissions.",
-    });
-  }
-};
-
-/* =========================================================
-   UPDATE TEACHER ASSIGNMENTS
-========================================================= */
-
-const updateTeacherAssignments = async (
-  req,
-  res
-) => {
-  try {
-    const { id } = req.params;
-    const { assignments } = req.body;
-
-    if (!ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid teacher ID.",
-      });
-    }
-
-    if (!Array.isArray(assignments)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Assignments must be an array.",
-      });
-    }
-
-    const normalizedAssignments =
-      normalizeAssignments(
-        assignments
-      );
-
-    const db = getDB();
-
-    const result =
-      await db.collection("teachers").updateOne(
-        {
-          _id: new ObjectId(id),
-        },
-        {
-          $set: {
-            assignments:
-              normalizedAssignments,
-            updatedAt: new Date(),
-          },
-        }
-      );
-
-    if (!result.matchedCount) {
-      return res.status(404).json({
-        success: false,
-        message: "Teacher not found.",
-      });
-    }
-
-    const teacher =
-      await db.collection("teachers").findOne({
-        _id: new ObjectId(id),
-      });
-
-    const {
-      passwordHash,
-      ...safeTeacher
-    } = teacher;
-
-    return res.status(200).json({
-      success: true,
-      message:
-        "Teacher assignments updated successfully.",
-      teacher: safeTeacher,
-    });
-  } catch (error) {
-    console.error(
-      "Update Teacher Assignments Error:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Failed to update teacher assignments.",
     });
   }
 };
@@ -949,8 +1044,5 @@ module.exports = {
   getTeacherById,
   updateTeacher,
   deleteTeacher,
-
   resetTeacherPassword,
-  updateTeacherPermissions,
-  updateTeacherAssignments,
 };

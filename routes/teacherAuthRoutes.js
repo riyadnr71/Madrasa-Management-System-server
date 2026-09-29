@@ -1,6 +1,6 @@
-const express = require("express");
+// routes/teacherAuthRoutes.js
 
-const router = express.Router();
+const express = require("express");
 
 const {
   teacherLogin,
@@ -9,10 +9,13 @@ const {
 
 const teacherAuthMiddleware = require("../middleware/teacherAuthMiddleware");
 
-// Teacher Login
-router.post("/login", teacherLogin);
+const router = express.Router();
 
-// Current Teacher
+router.post(
+  "/login",
+  teacherLogin
+);
+
 router.get(
   "/me",
   teacherAuthMiddleware,

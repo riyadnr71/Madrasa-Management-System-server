@@ -1,10 +1,17 @@
 const ExpenseModel = {
-  // Expense basic info
+  // =========================================================
+  // EXPENSE BASIC INFO
+  // =========================================================
+
   expenseId: "",
 
   expenseType: "",
 
   title: "",
+
+  // =========================================================
+  // AMOUNT
+  // =========================================================
 
   // Full expense / full salary
   amount: 0,
@@ -18,14 +25,22 @@ const ExpenseModel = {
   // Due / Partial / Paid
   paymentStatus: "Paid",
 
-  // Payment history
+  // =========================================================
+  // PAYMENT HISTORY
+  // =========================================================
+
   payments: [
     {
       amount: 0,
+
       date: "",
+
       paymentMethod: "Cash",
+
       note: "",
+
       invoiceNumber: "",
+
       createdAt: new Date(),
     },
   ],
@@ -35,20 +50,36 @@ const ExpenseModel = {
 
   note: "",
 
-  // Teacher information
+  // =========================================================
+  // TEACHER INFORMATION
+  // =========================================================
+
   teacherId: "",
 
   teacherName: "",
 
   teacherDesignation: "",
 
-  // Salary / expense period
+  // Teacher Branch
+  teacherBranch: "",
+
+  // =========================================================
+  // SALARY / EXPENSE PERIOD
+  // =========================================================
+
   month: "",
 
   year: 0,
 
-  // Payment/expense date
+  // =========================================================
+  // PAYMENT / EXPENSE DATE
+  // =========================================================
+
   expenseDate: "",
+
+  // =========================================================
+  // TIMESTAMPS
+  // =========================================================
 
   createdAt: new Date(),
 

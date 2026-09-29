@@ -1,68 +1,26 @@
-const createDefaultPermissions = () => ({
-  students: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
+// models/TeacherModel.js
 
-  results: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-
-  homework: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-
-  notices: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-
-  fees: {
-    view: false,
-    add: false,
-    edit: false,
-    delete: false,
-  },
-});
+const {
+  createDefaultPermissions,
+} = require("../utils/teacherPermissions");
 
 const TeacherModel = {
   teacherId: "",
-
   name: "",
-  subject: "",
-  designation: "",
-  qualification: "",
-
-  salary: 0,
   mobile: "",
+  email: "",
 
-  joiningDate: "",
-  address: "",
+  branch: "Main Branch",
 
-  status: "Active",
-  note: "",
+  passwordHash: "",
 
-  image: null,
-  imagePublicId: null,
+  status: "active",
 
-  // Teacher Login
-  passwordHash: null,
-
-  // Admin controlled permissions
   permissions: createDefaultPermissions(),
 
-  // Class + Subject assignments
-  assignments: [],
+  academicAccess: [],
+
+  attendanceAccess: [],
 
   createdAt: new Date(),
   updatedAt: new Date(),
