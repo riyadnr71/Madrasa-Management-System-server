@@ -11,6 +11,10 @@ const login = async (req, res) => {
       });
     }
 
+    console.log("LOGIN EMAIL:", email);
+    console.log("ENV ADMIN EMAIL:", process.env.ADMIN_EMAIL);
+    console.log("PASSWORD MATCH:", password === process.env.ADMIN_PASSWORD);
+
     if (
       email !== process.env.ADMIN_EMAIL ||
       password !== process.env.ADMIN_PASSWORD
@@ -29,7 +33,7 @@ const login = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "7d",
-      }
+      },
     );
 
     return res.status(200).json({

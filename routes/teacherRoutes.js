@@ -2,8 +2,11 @@ const express = require("express");
 
 const router = express.Router();
 
-const authMiddleware = require("../middleware/authMiddleware");
-const upload = require("../middleware/teacherUpload");
+const authMiddleware =
+  require("../middleware/authMiddleware");
+
+const upload =
+  require("../middleware/teacherUpload");
 
 const {
   addTeacher,
@@ -11,23 +14,26 @@ const {
   getTeacherById,
   updateTeacher,
   deleteTeacher,
+  resetTeacherPassword,
+  updateTeacherPermissions,
+  updateTeacherAssignments,
 } = require("../controllers/teacherController");
 
-// =========================================================
-// GET ALL TEACHERS
-// =========================================================
+/* =========================================================
+   ADMIN TEACHER CRUD
+========================================================= */
 
-router.get("/", authMiddleware, getTeachers);
+router.get(
+  "/",
+  authMiddleware,
+  getTeachers
+);
 
-// =========================================================
-// GET SINGLE TEACHER
-// =========================================================
-
-router.get("/:id", authMiddleware, getTeacherById);
-
-// =========================================================
-// ADD TEACHER
-// =========================================================
+router.get(
+  "/:id",
+  authMiddleware,
+  getTeacherById
+);
 
 router.post(
   "/",
@@ -36,10 +42,6 @@ router.post(
   addTeacher
 );
 
-// =========================================================
-// UPDATE TEACHER
-// =========================================================
-
 router.put(
   "/:id",
   authMiddleware,
@@ -47,14 +49,40 @@ router.put(
   updateTeacher
 );
 
-// =========================================================
-// DELETE TEACHER
-// =========================================================
-
 router.delete(
   "/:id",
   authMiddleware,
   deleteTeacher
+);
+
+/* =========================================================
+   ADMIN TEACHER LOGIN CREDENTIALS
+========================================================= */
+
+router.patch(
+  "/:id/reset-password",
+  authMiddleware,
+  resetTeacherPassword
+);
+
+/* =========================================================
+   ADMIN TEACHER PERMISSIONS
+========================================================= */
+
+router.patch(
+  "/:id/permissions",
+  authMiddleware,
+  updateTeacherPermissions
+);
+
+/* =========================================================
+   ADMIN TEACHER CLASS + SUBJECT ASSIGNMENTS
+========================================================= */
+
+router.patch(
+  "/:id/assignments",
+  authMiddleware,
+  updateTeacherAssignments
 );
 
 module.exports = router;

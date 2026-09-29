@@ -12,10 +12,11 @@ const { connectDB } = require("./config/db");
 // AUTH
 const authRoutes = require("./routes/authRoutes");
 
-
-
 // STUDENTS
 const studentRoutes = require("./routes/studentRoutes");
+
+// STUDENT AUTH
+const studentAuthRoutes = require("./routes/studentAuthRoutes");
 
 // SUBJECTS
 const subjectRoutes = require("./routes/subjectRoutes");
@@ -34,6 +35,9 @@ const feeSetupRoutes = require("./routes/feeSetupRoutes");
 // TEACHERS
 const teacherRoutes = require("./routes/teacherRoutes");
 
+// TEACHER AUTH
+const teacherAuthRoutes = require("./routes/teacherAuthRoutes");
+
 // EXPENSES
 const expenseRoutes = require("./routes/expenseRoutes");
 
@@ -47,14 +51,44 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 // REPORTS
 const reportRoutes = require("./routes/reportRoutes");
 
+// SEAT PLAN
 const seatPlanRoutes = require("./routes/seatPlanRoutes");
-const studentAuthRoutes = require("./routes/studentAuthRoutes");
 
 // =========================================================
 // APP
 // =========================================================
 
 const app = express();
+
+// =========================================================
+// ROUTE TYPE CHECK
+// =========================================================
+
+console.log("");
+console.log("========================================");
+console.log("🔍 ROUTE TYPE CHECK");
+console.log("========================================");
+
+console.log("AUTH:", typeof authRoutes);
+console.log("DASHBOARD:", typeof dashboardRoutes);
+console.log("STUDENT AUTH:", typeof studentAuthRoutes);
+console.log("TEACHER AUTH:", typeof teacherAuthRoutes);
+console.log("REPORTS:", typeof reportRoutes);
+console.log("STUDENTS:", typeof studentRoutes);
+console.log("SUBJECTS:", typeof subjectRoutes);
+console.log("RESULTS:", typeof resultRoutes);
+console.log("PUBLIC RESULT:", typeof publicResultRoutes);
+console.log("PUBLIC IMAGE:", typeof publicImageRoutes);
+console.log("FEES:", typeof feeRoutes);
+console.log("FEE SETUP:", typeof feeSetupRoutes);
+console.log("TEACHERS:", typeof teacherRoutes);
+console.log("EXPENSES:", typeof expenseRoutes);
+console.log("NOTICES:", typeof noticeRoutes);
+console.log("PUBLIC NOTICES:", typeof publicNoticeRoutes);
+console.log("SEAT PLAN:", typeof seatPlanRoutes);
+
+console.log("========================================");
+console.log("");
 
 // =========================================================
 // CORS
@@ -66,8 +100,7 @@ app.use(
       "http://localhost:5173",
       "http://localhost:5174",
       "https://schoolwebsite71.netlify.app",
-      "https://school91.netlify.app"
-
+      "https://school91.netlify.app",
     ],
     credentials: true,
   })
@@ -97,173 +130,243 @@ app.get("/", (req, res) => {
 });
 
 // =========================================================
-// AUTH
+// ROUTE MOUNTING DEBUG
 // =========================================================
+
+console.log("========================================");
+console.log("🚀 STARTING ROUTE MOUNTING");
+console.log("========================================");
+
+// =========================================================
+// ADMIN AUTH
+// =========================================================
+
+console.log("1️⃣ Mounting AUTH...");
 
 app.use(
   "/api/auth",
   authRoutes
 );
 
+console.log("✅ AUTH mounted successfully");
+
 // =========================================================
 // DASHBOARD
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("2️⃣ Mounting DASHBOARD...");
 
 app.use(
   "/api/dashboard",
   dashboardRoutes
 );
 
+console.log("✅ DASHBOARD mounted successfully");
+
+// =========================================================
+// STUDENT AUTH
+// =========================================================
+
+console.log("3️⃣ Mounting STUDENT AUTH...");
 
 app.use(
   "/api/student-auth",
   studentAuthRoutes
 );
 
+console.log("✅ STUDENT AUTH mounted successfully");
+
+// =========================================================
+// TEACHER AUTH
+// =========================================================
+
+console.log("4️⃣ Mounting TEACHER AUTH...");
+
+app.use(
+  "/api/teacher-auth",
+  teacherAuthRoutes
+);
+
+console.log("✅ TEACHER AUTH mounted successfully");
+
 // =========================================================
 // REPORTS
-// 🔐 Requires authentication
 // =========================================================
-//
-// Result Report:
-// GET /api/reports/results
-//
-// Fee Report:
-// GET /api/reports/fees
-//
-// Expense Report:
-// GET /api/reports/expenses
-//
-// Financial Report:
-// GET /api/reports/financial
-// =========================================================
+
+console.log("5️⃣ Mounting REPORTS...");
 
 app.use(
   "/api/reports",
   reportRoutes
 );
 
+console.log("✅ REPORTS mounted successfully");
+
 // =========================================================
 // STUDENTS
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("6️⃣ Mounting STUDENTS...");
 
 app.use(
   "/api/students",
   studentRoutes
 );
 
+console.log("✅ STUDENTS mounted successfully");
+
 // =========================================================
 // SUBJECTS
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("7️⃣ Mounting SUBJECTS...");
 
 app.use(
   "/api/subjects",
   subjectRoutes
 );
 
+console.log("✅ SUBJECTS mounted successfully");
+
 // =========================================================
-// RESULTS - ADMIN
-// 🔐 Requires authentication
+// RESULTS
 // =========================================================
+
+console.log("8️⃣ Mounting RESULTS...");
 
 app.use(
   "/api/results",
   resultRoutes
 );
 
+console.log("✅ RESULTS mounted successfully");
+
 // =========================================================
 // PUBLIC RESULT
-// 🌍 No authentication
 // =========================================================
+
+console.log("9️⃣ Mounting PUBLIC RESULT...");
 
 app.use(
   "/api/public-result",
   publicResultRoutes
 );
 
+console.log("✅ PUBLIC RESULT mounted successfully");
+
 // =========================================================
 // PUBLIC IMAGE
-// 🖼️ JPG / PDF IMAGE EXPORT
-// 🌍 No authentication
 // =========================================================
+
+console.log("🔟 Mounting PUBLIC IMAGE...");
 
 app.use(
   "/api/public-image",
   publicImageRoutes
 );
 
+console.log("✅ PUBLIC IMAGE mounted successfully");
+
 // =========================================================
 // FEES
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("1️⃣1️⃣ Mounting FEES...");
 
 app.use(
   "/api/fees",
   feeRoutes
 );
 
+console.log("✅ FEES mounted successfully");
+
 // =========================================================
 // FEE SETUP
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("1️⃣2️⃣ Mounting FEE SETUP...");
 
 app.use(
   "/api/fee-setups",
   feeSetupRoutes
 );
 
+console.log("✅ FEE SETUP mounted successfully");
+
 // =========================================================
 // TEACHERS
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("1️⃣3️⃣ Mounting TEACHERS...");
 
 app.use(
   "/api/teachers",
   teacherRoutes
 );
 
+console.log("✅ TEACHERS mounted successfully");
+
 // =========================================================
 // EXPENSES
-// 🔐 Requires authentication
 // =========================================================
+
+console.log("1️⃣4️⃣ Mounting EXPENSES...");
 
 app.use(
   "/api/expenses",
   expenseRoutes
 );
 
+console.log("✅ EXPENSES mounted successfully");
+
 // =========================================================
-// NOTICES - ADMIN
-// 🔐 Requires authentication
+// NOTICES
 // =========================================================
+
+console.log("1️⃣5️⃣ Mounting NOTICES...");
 
 app.use(
   "/api/notices",
   noticeRoutes
 );
 
+console.log("✅ NOTICES mounted successfully");
+
 // =========================================================
 // PUBLIC NOTICES
-// 🌍 No authentication
 // =========================================================
+
+console.log("1️⃣6️⃣ Mounting PUBLIC NOTICES...");
 
 app.use(
   "/api/public-notices",
   publicNoticeRoutes
 );
 
+console.log("✅ PUBLIC NOTICES mounted successfully");
 
-  app.use(
+// =========================================================
+// SEAT PLAN
+// =========================================================
+
+console.log("1️⃣7️⃣ Mounting SEAT PLAN...");
+
+app.use(
   "/api/seat-plan",
   seatPlanRoutes
 );
 
+console.log("✅ SEAT PLAN mounted successfully");
 
+// =========================================================
+// ALL ROUTES MOUNTED
+// =========================================================
 
-
+console.log("");
+console.log("========================================");
+console.log("✅ ALL ROUTES MOUNTED SUCCESSFULLY");
+console.log("========================================");
+console.log("");
 
 // =========================================================
 // 404
@@ -421,6 +524,42 @@ const startServer = async () => {
 
         console.log(
           `   Financial: http://localhost:${PORT}/api/reports/financial`
+        );
+
+        // -------------------------------------------------
+        // STUDENT AUTH
+        // -------------------------------------------------
+
+        console.log("");
+
+        console.log(
+          "🎓 Student Auth:"
+        );
+
+        console.log(
+          `   Login: http://localhost:${PORT}/api/student-auth/login`
+        );
+
+        console.log(
+          `   Me:    http://localhost:${PORT}/api/student-auth/me`
+        );
+
+        // -------------------------------------------------
+        // TEACHER AUTH
+        // -------------------------------------------------
+
+        console.log("");
+
+        console.log(
+          "👨‍🏫 Teacher Auth:"
+        );
+
+        console.log(
+          `   Login: http://localhost:${PORT}/api/teacher-auth/login`
+        );
+
+        console.log(
+          `   Me:    http://localhost:${PORT}/api/teacher-auth/me`
         );
 
         // -------------------------------------------------
